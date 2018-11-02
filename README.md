@@ -49,7 +49,7 @@ Description of files in the repository (also available as knitted pdfs):
 `SA09_URD_Endoderm.Rmd`
  - Trajectory reconstruction for endodermal epithelial cells
 
-`A10_URD_Ectoderm.Rmd`
+`SA10_URD_Ectoderm.Rmd`
  - Trajectory reconstruction for ectodermal epithelial cells
 
 `SA11a_URD_InterstitialCellsSubset.Rmd`
@@ -70,12 +70,11 @@ Description of files in the repository (also available as knitted pdfs):
 `SA15_URD_MaleGenome.Rmd`
  - Trajectory reconstruction for male germline cells (genome data)
 
-Files to used fo
-
+## Additional files
 
 The respository also includes the following folders:
 
-`nmf/`
+#### `nmf/`
 
 Contains Non-negative matrix factorization (NMF) results for different sets of cells. Provided are cell and gene scores for metagenes with strong cell-type signatures (“good metagenes") and metagenes with more general cell state or technical signature (“bad metagenes”). Also provided are the 30 highest scoring genes for each metagene.
  - ec_K76	- NMF for subset of all ectodermal epithelial cells
@@ -85,7 +84,7 @@ Contains Non-negative matrix factorization (NMF) results for different sets of c
  - wg_K84 - NMF for whole dataset (genome mapped reads)
  - wt_K96 - NMF for whole dataset (transcriptome mapped reads)
 
-`enrichment_resources/`
+#### `enrichment_resources/`
 
 - `findMotifs_homer.sh`- shell script used to run HOMER. 
 - `2Rep.IDR.mod.bed`- ATAC-seq peak consensus file, available as track on the Hydra 2.0 genome browser https://research.nhgri.nih.gov/hydra/.
@@ -103,4 +102,24 @@ Contains Non-negative matrix factorization (NMF) results for different sets of c
 - `Hydra_PFMs/` - JASPAR motifs identified in Hydra proteins. 
 - `JASPAR2018_CORE_redundant_pfms_jaspar/` - Complete set of available JASPAR motifs (available at http://jaspar.genereg.net)
 
+#### `cluster_results/` 
 
+Many steps of URD involve simulations, which are non-deterministic. Thus, we include the results of our simulations so that results can be reproduced exactly.
+
+- `ectoderm-flood-dml40-295441.rds` - 'Flood' simulations for determining pseudotime in the ectodermal epithelial cells
+- `ectoderm-walks-dml40-20F-40B.rds` - Biased random walk simulations in the ectodermal epithelial cells
+- `endoderm-flood-dmK60S6-NW-607654556.rds` - 'Flood' simulations for determining pseudotime in the endodermal epithelial cells
+- `endoderm-walks-dmK60S6-0F-500B-232119170.rds` - Biased random walk simulations in the endodermal epithelial cells
+- `ic-clusters.txt` - Cluster assignments in the interstitial lineage used for determining the root and tips
+- `ic-dm-100NN-localS.rds`  - Diffusion map in the interstitial lineage
+- `ic-flood-100NN-localS-39136755.rds` - 'Flood' simulations for determining pseudotime in the interstitial lineage cells
+- `ic-terminal-nematocytes.txt` - List of 'terminal nematocyte' cells that were excluded in building the interstitial lineage differentiation tree
+- `ic-var.txt` - List of variable genes in the interstitial lineage used for determining outlier cells
+- `ic-walks-100NN-localS-0F-100B-920281002.rds` - Biased random walk simulations in the interstitial cells
+- `male-flood-dmg75-rootI20_7.rds` - 'Flood' simulations for determining pseudotime in the male germline cells (transcriptome aligned, beginning at cluster 7)
+- `male-flood-dmg75-rootI20_9.rds` - 'Flood' simulations for determining pseudotime in the male germline cells (transcriptome aligned, beginning at cluster 9)
+- `malegenome-flood-dmg75-rootI20_12.rds` - 'Flood' simulations for determining pseudotime in the male germline cells (genome aligned, beginning at cluster 12)
+- `malegenome-flood-dmg75-rootI20_4.rds` - 'Flood' simulations for determining pseudotime in the male germline cells (transcriptome aligned, beginning at cluster 4)
+- `spumous-flood-dmg75-rootI20_3.rds` - 'Flood' simulations for determining pseudotime in the spumous mucous cells
+- `zymogen-flood-dmg75-rootI20_10.rds` - 'Flood' simulations for determining pseudotime in the granular mucous and zymogen gland cells (beginning at cluster 10)
+- `zymogen-flood-dmg75-rootI20_11.rds` - 'Flood' simulations for determining pseudotime in the granular mucous and zymogen gland cells (beginning at cluster 11)
