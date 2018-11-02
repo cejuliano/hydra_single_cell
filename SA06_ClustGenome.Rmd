@@ -1,0 +1,342 @@
+---
+title: "SA06 - Cluster analysis for genome mapped reads"
+author: "Stefan Siebert"
+date: "October 25, 2018"
+bibliography: SA.bib
+csl: bib.csl
+site: "bookdown::bookdown_site"
+output:
+  bookdown::pdf_document2:
+    toc: FALSE
+linestretch: 0.5
+fontsize: 11 pt
+geometry: margin= 2.0 cm
+---
+
+\fontsize{10}{18}
+
+```{r knit_prep, echo=F, results='hide', message=F, warning=F}
+
+library("knitr")
+opts_chunk$set(tidy.opts=list(width.cutoff=70),tidy=TRUE,dev="png",dpi=150)
+
+```
+
+## Summary {-}
+
+Drop-seq reads from 15 libraries generated for *Hydra vulgaris* AEP were mapped to the *Hydra vulgaris 105* 2.0 Genome assembly (available at https://research.nhgri.nih.gov/hydra/) and processed using the *Hydra* 2.0 gene models. This genome assembly is for a strain which is closely related to *Hydra vulgaris* AEP and was formerly referred to as *Hydra magnipapillata* 105. We performed graph-based clustering of recovered cells using Seurat [@Satija:2015iq] considering cells with >300 <7k genes and >500UMI < 50k UMIs. NMF analysis was performed to identify modules of co-expressed genes (NMF analysis wg_K84).\  
+
+# Preliminaries {-}
+
+```{r preliminaries, include=TRUE, message=F, warning=F}
+
+library(Seurat)
+library(dplyr)
+library(Matrix)
+library(gtable)
+library(grid)
+library(gridExtra)
+library(rlang)
+
+# Function to find the full ID for gene of interest
+hFind <- function (x) {
+  return (ds.ds@data@Dimnames[[1]][grep(x,ds.ds@data@Dimnames[[1]],ignore.case = T)])
+}
+
+# We assume a folder "objects" in the markdown directory that contains our raw count object and all Seurat objects
+
+```
+
+## Load data {-}
+
+We load `GSE121617_Hydra_DS_genome_UMICounts.txt`, which is a *genes X cell* data.frame of unnormalized, unlogged transcripts detected per gene per cell.\
+
+```{r load data}
+
+#load UMI data
+ds.counts <- read.table("objects/GSE121617_Hydra_DS_genome_UMICounts.txt", sep="\t", check.names = FALSE, header = TRUE)
+
+```
+
+## Create Seurat object {-}
+
+```{r create Seurat}
+
+# Keep all genes expressed in >= 3 cells, keep all cells with >= 300 genes
+aep.ds <- CreateSeuratObject(raw.data=ds.counts, min.cells=3, min.genes=300, project="Hydra")
+
+ds.ds <- MakeSparse(object = aep.ds)
+rm(aep.ds)
+
+```
+
+## Clustering of cells {-}
+
+```{r clustering, cache.lazy = FALSE, cache=TRUE, message=F, warning=F, results='hide', fig.keep='none'}
+
+# Use transcriptome gene/UMI cut-offs
+ds.ds <- FilterCells(object = ds.ds, subset.names = c("nGene", "nUMI"), low.thresholds = c(300,500) , high.thresholds = c(7000, 50000))
+# Normalize the data
+ds.ds <- NormalizeData(object = ds.ds, normalization.method = "LogNormalize", scale.factor = 10000)
+# Find variable genes
+ds.ds <- FindVariableGenes(object = ds.ds, mean.function = ExpMean, dispersion.function = LogVMR, 
+    x.low.cutoff = 0.05, x.high.cutoff = 4, y.cutoff = 0.5)
+# Scale
+ds.ds <- ScaleData(object = ds.ds)
+# Run PCA on highly variable genes
+#ds.ds <- PCA(ds.ds, do.print = TRUE, pcs.print = 20, genes.print = 20)
+ds.ds <- RunPCA(object = ds.ds, pc.genes = ds.ds@var.genes, pcs.compute = 40, do.print = TRUE, pcs.print = 1:5, 
+    genes.print = 20)
+# Project PCA to find genes that weren't scored as highly variable, but should belong to a given PC and include them.
+ds.ds <- ProjectPCA(object = ds.ds)
+
+#perform permutation test to directly calculate p-value
+#ds.ds <- JackStraw(object = ds.ds, num.pc = 40, num.replicate = 100, do.print = FALSE)
+#JackStrawPlot(object = ds.ds, PCs=1:40)
+
+# Approximate amount of variance encoded by each PC
+PCElbowPlot(object = ds.ds, num.pc = 40)
+
+# Find cluster
+ds.ds <- FindClusters(object = ds.ds, reduction.type = "pca", dims.use = 1:30, force.recalc = TRUE, resolution = 1.5, print.output = 0)
+# Run TSNE
+ds.ds <- RunTSNE(object = ds.ds, dims.use = c(1:30), do.fast = T)
+
+#saveRDS("objects/genome_pc30.rds")
+
+```
+
+## Doublet identification {-}
+
+Analogous to filtering performed for transcriptome data, we exclude cells that express male germ cell specific histones and that are not part of the male germline cluster (see SA02_ClustTranscriptome.Rmd). We also exclude suspected doublet cells that co-express endodermal and zymogen gland cell markers as well as cells that co-express ectodermal and ectodermal epithelial cell markers.\
+
+```{r doubletcluster, echo=FALSE, message=F, warning=F, results='hide', fig.keep='none'}
+
+# Load object from our analysis
+#ds.ds <- readRDS("objects/genome_pc30.rds")
+
+# Excluding cells that express histone proteins outside the male germline clusters
+
+# Male germline specific histone genome gene models 
+#g1835.t1|H2BE_STRPU - transcriptome id: t11585aep|H2BL1_PSAMI
+#g32541.t1|H5_CHICK - transcriptome id: t38683aep|H10A_XENLA 
+
+#Explore co-expression of histone genes
+FeaturePlot(object = ds.ds, features.plot = c(hFind("g1835.t1"),hFind("g32541.t1")), no.legend = FALSE)
+
+```
+
+```{r endogland, echo=FALSE, message=F, warning=F, results='hide', fig.keep='none'}
+
+# We identify doublet cluster by using marker genes that are broadly expressed in endodermal epithelial cells and zymogen gland cells.
+
+# Genes expressed broadly in endodermal cells
+#g25767.t1|FRIH_TREBE - transcriptome id: t31900aep|FRIH_TREBE
+#g6754.t1 - transcriptome id: t34741aep
+#g874.t1 - transcriptome id: t30697aep 
+#g29449.t1|MP20_DROME - transcriptome id: t4961aep|MP20_DROME
+
+# Genes expressed broadly in zymogen gland cells
+#g11221.t1|CHIT1_HUMAN - transcriptome id: t18356aep_CHIA_MOUSE
+#g20117.t1 - transcriptome id: t14102aep 
+#g30764.t1|CEL3B_MOUSEL - chitinase
+#g23353.t1|PRSS8_RAT - transcriptome id: t20198aep_CTRB_BOVIN
+
+# Plot endodermal and gland cell markers
+p <- FeaturePlot(ds.ds, c(hFind("g25767.t1"), hFind("g6754.t1"), hFind("g874.t1"), hFind("g29449.t1"), hFind("g11221.t1"), hFind("g20117.t1"), hFind("g30764.t1"), hFind("g23353.t1")), cols.use=c("grey", "blue"), do.return=TRUE)
+  
+plot_grid(p[[1]],p[[2]],p[[3]],p[[4]],p[[5]],p[[6]],p[[7]],p[[8]], labels="AUTO", label_size = 20, align = "h", ncol=4)
+
+```
+
+```{r endoecto, echo=FALSE, message=F, warning=F, results='hide', fig.keep='none'}
+
+# Genes expressed broadly in ectodermal epithelial cells
+#g30822.t1  - transcriptome id: t13977aep|LTBP2_HUMAN
+#g28273.t1  - transcriptome id: t24244aep
+#g11131.t1  - transcriptome id: t12614aep|ASAL_ALLSA
+#g20377.t1  - transcriptome id: t23162aep
+
+# Plot endodermal and ectodermal markers
+p <- FeaturePlot(ds.ds, c(hFind("g25767.t1"), hFind("g6754.t1"), hFind("g874.t1"), hFind("g29449.t1"), hFind("g30822.t1"), hFind("g28273.t1"), hFind("g11131.t1"), hFind("g20377.t1")), cols.use=c("grey", "blue"), do.return=TRUE)
+
+```
+
+```{r, echo=FALSE, message=F, warning=F, results='hide', fig.keep='none'}
+
+#identify cells to be excluded using do.identify = TRUE in Seurat function TSNEPlot()
+
+# Get endo gland doublets
+# Gland.endo <- TSNEPlot(object = ds.ds, do.identify = TRUE)
+
+# These are the cell IDs that were excluded in our analysis (suspected endoderm - gland cell doublets)
+
+gland.endo <- c("01-D1_CTAGACTAGCCC","01-D1_TTCCTGGCAGGC","01-D1_ATTGCGGCCGCT","01-D1_TGTGTCTGCCGG","01-D1_ACTGGGATGAAA","01-D1_CCAGTTCGTCTC","01-D1_TCGGGGAAACGA","01-P2_GTACTGTTCGTC","01-P2_GAAACAGGGAAC","01-P2_CGGTCAATTCCG","01-P2_GATGGTGGTCTN","01-P2_AGCTTAGCCGCG","01-P2_GCAGCTCTGGTT","01-P2_TCACCGCAACAN","01-P2_TTAAAGACATGA","01-P2_GTCGACGCCGGA","01-P2_CCCACGCACCAT","01-P2_GAGAGGGCCGAG","01-P2_GCCAAAGCAAAA","01-P2_ATCATACTACGN","02-CO_CCCGCGCCGATN","02-CO_TTCCAGTTTTCN","02-CO_CAGAGCACATGG","02-CO_ACTTTGTCATCG","02-CO_ATAGTGACATCA","02-CO_TAATGTGTATTT","02-CO_TCCCATGGGTAC","02-CO_TCTCAGGGGCCN","02-CO_TGTAGTTCAATN","02-CO_GGATTCGTATGT","02-CO_GGAGGAGTAATN","02-CO_GCCACTTGGGTT","02-CO_TCGCGACAGTGC","02-CO_GATCGGGAGCCA","02-CO_CCTCGGAGGCAC","02-CO_TGTCAGTTCAAT","02-CO_CCAAGGTCTGCG","02-CO_CGCAACATTGGT","02-CO_TACTTCGTCGTT","02-CO_GATCCCCAATCT","02-CO_GTTCCGGGGTGT","02-P1_AAATTCCGGTGN","02-P1_AGATAGCGTTCT","02-P1_CCAGCAGAACAN","02-P1_GTTAGATTTATT","02-P1_GGAAATACCGGN","02-P1_AGTCCGGTCCGA","02-P1_ACGTCGGAAAAG","02-P1_AAAGGATCGGTN","02-P1_ATGCTGTCGTAG","02-P1_TTGAGTCTGGAT","02-P1_CGGCCAGGCGTA","02-P1_GGTGCGCCGTAN","02-P1_ATCGGTTCTAGT","02-P1_CGGGTCACAAGA","02-P1_TTCGTTCTACCN","02-P1_CGACTAGAAGTC","02-P1_CGTTCTGCAATG","02-P1_ATCTGTGCATCG","02-P1_GAGGGTATGTCA","02-P1_GGCAAAGGTCCG","02-P1_GCGACTGCCCTT","02-P1_TGGTAGTGAGGA","02-P1_TACCGGTATGTT","02-P1_CGAAGCACTGCT","02-P1_AAATTCCGGTCG","02-P1_GATTGGTGGCGC","02-P1_CCGATGCAACGG","02-P1_TACCAATAGAGA","02-P1_AACGCAGCGGTA","02-PB_CATAGTCATCAN","02-PB_TACGCTACGGCA","02-PB_GAGACCTACTTN","02-PB_ACTGTGTGTGTC","02-PB_AGGATTGCGGTN","02-PB_AGTGTTGACCGN","03-KI_AAACTTCGATAC","03-KI_ACTGCCCTCTGN","03-KI_GCGCGGCAACTG","03-KI_CTCGAACAAAGG","03-KI_CCTTGCGACGTT","03-KI_GTACTTTCTAGT","03-KI_CGAAGCAATCCC","03-KI_CTTTTGCACCCC","03-KI_ACCTACGCACTT","03-KI_CGTTGATAGAAT","03-KI_TTGCTGAACCGN","03-KI_CCACACCAGGCT","03-KI_CAAAAAATAGGA","03-KI_ATTACACGCTAT","03-KI_CAAAAATAGGAN","03-KI_CGAGCAATCCCN","03-KI_CAAACTGGATAA","03-KI_CAACTGGATAAN","03-MA_AGGCGTCCGTGT","03-MA_TCTCATGTTTGN","03-MA_CTGTTCGGACTN","03-MA_CTGATTCGGACT","03-FM_ATCGTCTCGCGG","06-FM_CTTCAAATCTTC","06-FM_CCGTACTCCGCC","06-FM_CGCTGCGAGAGC","06-FM_ATAGCTCTCCGA","06-MA_AGCCAGGCAAAA","06-MA_ATGTTACACGCG","06-MA_GACGAAAAGGGA","06-MA_TACAGCTAGTCT","06-MA_TACGCTAGTCTN","06-KI_CAGCAACGCGGG","06-KI_ATAGCTTAGAGA","06-KI_AGTCTCAAGGCC","06-KI_GTCAAACAGATA","06-KI_CATTTCCTCCAC","06-KI_CTTCCGTTCTAT","06-KI_CCTGAGAAACGC","06-KI_TCATTACGACAT","06-KI_GTCAACAGATAN","06-KI_GCCCACAACTAG","06-KI_CTGCGGGACCGC","06-KI_ATCACTGTCCCC","06-KI_GCAGGTGTCCAG","11-PO_TATGACTAGATT","11-PO_GTGATAGGTTTC","11-PO_CAATCCGAACTA","11-PO_TGAAAGATGACC","11-PO_TTTCATACCTTT","11-PO_TCGATTCTCCCG","11-PO_ATTGTTATTCGC","11-PO_GCAGTGCGTCGG","11-PO_AAGCTTCGACGC","11-PO_TTGGAGCGTGGG","11-PO_AAATTGCGGACA","11-PO_CATAGGACGCTT","11-PO_GTAATTTTGTTC","11-PO_GGTTCGCCGCAC","11-PO_CCCACCGGCACA","11-PO_GCTCTGAATTTA","11-PO_CAACTATTATCC","11-PO_GTTCGTAGCCAT","11-PO_AGGCCTACGTCA","11-PO_TGTCCATGAAGA","11-BU_TGCGCCTTCTTA","11-BU_CTAATCCACGTT","11-BU_CTCCTTGAAGCG","11-BU_GTTCAAGATATC","11-BU_CGCGAGGTATCA","11-BU_GTAGGTTTTCAA","11-BU_GTAAATATACGC","11-BU_TTGGTCAATGCT","11-BU_GCCGAGATCGGG","11-BU_TATATGTTTCGT","11-BU_ACCCAAGGTTTA","11-BU_GTGCGTGAATGA","11-BU_TCTACTACGGAG","11-BU_GAGGCAGGAACC","11-BU_CGACTTCCCCGG","11-BU_TCCATTCGTATG","11-BU_ATCGTGCCAAAG","11-BU_GGGGAGAACATC","11-BU_TAACCCGATGAA","11-BU_TCTGTGCTTAAT","11-BU_GGGCACCTCAGG","11-BU_TAACTTATTGTC","11-BU_GTGATGAGTAAC","11-BU_AATCACGCGCGT","11-BU_ACATACGCGTTG","11-BU_CGATCCGTTATC","11-BU_AGTCTCCTCAGT","11-BU_GCAACTGTTATT","11-BU_CCTAACACACAC","11-BU_CCCGGGTAGGTG","11-BU_ATGAATAGCCAT","11-BU_GGGCGCCCGAAA","11-BU_TGGTAACCAGAT","11-BU_CCAACGAGTGCA","11-BU_CCAAGTGGACGA","11-BU_GAGTCGGTAGGG","11-BU_TACGCCCTGTTC","11-BU_GATCAGGGAGAA","11-BU_CTACTTAATGCC","11-BU_GCTCCAGAGGTC","12-N1_CTGTATACTATC","12-N1_CCGGTAACTTAT","12-N1_GTACTCGTCTCC","12-N2_TAATGTTGGCTT","12-N2_TCTTACCTGGGA","12-N2_CAGTGCTCCAGA","12-N2_ATAAGGTGGTAG","12-N2_CATACCAGGCCA")
+
+#endo.ecto <- TSNEPlot(object = ds.ds, do.identify = TRUE)
+
+endo.ecto1 <- c("01-D1_GACCATTCCAAT","01-D1_ATTAGCTGCACG","01-P2_TCGGCCTTAGAN","01-P2_CATATTGCTACN","01-P2_GCTGGATACAGN","01-P2_CCGCTTAAGGAN","01-P2_AACTTCTGGGCC","01-P2_TAGCAGCTTCTA","02-CO_ATTCAGCGCTCN","02-CO_TTCACTAACGAA","02-CO_GGGGTTTCGTTA","02-CO_ACTGGATCTCAG","02-CO_AAAAGAGGAAGG","02-CO_CCAGTACTGACC","02-CO_AACCCTACGGTA","02-CO_TTAGCAGTATTN","02-CO_CGCATTTTGGCG","02-CO_TGCAGACTTCTA","02-CO_GGAAGAGAGAGC","02-CO_TCGGTTGCCCCG","02-CO_CGTTCGCGTCTT","02-CO_CGTCCTGTAGGG","02-CO_CACACTCGGTTA","02-CO_AATTAGCGTGCC","02-CO_AACACCCCACGT","02-CO_GGTTTAAGAACG","02-CO_ATCGGGCCTGGA","02-CO_CCGCTGCGAAAC","02-CO_GGTCCAGAGCTT","02-CO_AAGTGCGATTCG","02-CO_TGTTTAAAGTAC","02-CO_AGTCCCAGATCA","02-CO_AAAGTGCCAGAA","02-P1_TGGATTATTAAG","02-P1_CGTTTGACTGGG","02-P1_CACCCAGGTCCG","02-P1_GGGTGTTGACCT","02-P1_CCCTGGACACCA","02-P1_CGAGTGCTTCCT","02-P1_CATAAGATGTTT","02-P1_AGTGCCTATAGT","02-P1_GATGTCTTCTCC","02-P1_CCGCCCCCTTGA","02-P1_GATTCTTCTCCN","02-P1_CGAGTGCTTCCN","02-P1_CTGGTTTCTGAA","02-P1_GTATTGGGTAGN","02-P1_GGTCTTCAGCAT","02-P1_TGCCGGTCAGCT","02-P1_GAGTCTGTCGCC","02-P1_GAAGTTGCATTC","02-P1_TAGTGATGCTAN","02-P1_ATCTTATTCTAT","02-P1_CTGCGGGCGAGT","02-P1_ACTGGTGAGGAG","02-P1_AGTTCCATGAGN","02-P1_TCTACACAAGTG","02-P1_GCGGTGTAAAAA","02-P1_CGAAGGATTCCN","02-P1_GCAAACCTGAGG","02-P1_AAGAGCAGTGAN","02-P1_CAAGTTTCTTTC","02-P1_CGTTGCGGTCAT","02-P1_CCGCACCCCATC","02-P1_TTCGTAGACTTC","02-P1_GAAGCTGACAAC","02-P1_ATTGGCTCTGAA","02-P1_CAATCAGTCGAG","02-P1_CGCTTTCGCGCT","02-P1_TTACGCAACTGC","02-P1_TCGAGGAACATT","02-P1_AAGGGGGATAAN","02-P1_CTGTTCGATCAG","02-P1_CAGCTTGAGGCA","02-P1_ACTTAGTCATTA","02-P1_GTGGCTAGTAAT","02-P1_CCAATGTTCTGG","02-P1_GCACAATCTCGA","02-P1_CTTAACATTCAC","02-P1_AAAAGATTGGAA","02-P1_TTAAACTACGAG","02-P1_GGTTTAGGCTGC","02-P1_GGTATTGTAGAC","02-P1_GCGCTCGAATAT","02-P1_ACGGGTTGCAAT","02-P1_TCTCCCATTTCC","02-P1_AGCCGTTAGGGN","02-P1_ATTTCAGTTTTG","02-P1_CGTGGGCAGTTG","02-P1_CGCATGAAAGTN","02-P1_AGTCTCCCGGTC","02-P1_AATCATCTGACT","02-P1_ACACGAGTCGTA","02-P1_TTCTACTTATGC","02-P1_GAGCGTGCCGTG","02-P1_GGTAAACCATCG","02-P1_TTGCCCATGTCT","02-P1_AATAGCATGTCT","02-P1_AGGAGTGGCAGT","02-P1_GGTCACCACAAA","02-P1_AGTAGGGGGCGA","02-P1_ACGGCCCTGCAT","02-P1_GTTCCATGAGAT","02-PB_TAAATCGCTAGA","02-PB_ATCCCGCCCGTN","02-PB_GTGCGAAATTGG","02-PB_ATCCCGCTCCGT","02-PB_TTTGTCAACCAA","02-PB_TAAAGCGCCGCT","02-PB_TGGTCGTATCAC","02-PB_CTCCACGCTTTT","02-PB_TGAACGGGTTCA","02-PB_GGTTACCCCCTG","02-PB_CTCGCATGCTCC","02-PB_GCGCTTCTGATT","02-PB_AGTTTTGTAAGC","02-PB_AAGGGTCACCCT","02-PB_ATACCCACGTTA","02-PB_TATTGTGAATTT","02-PB_TAGAGGTCCCTT","03-KI_TTCCAGTCACGG","03-KI_ATACACGGAGTT","03-KI_AATGGCACTGGT","03-KI_ACGCTTTCCTGN","03-KI_CAGTAACACCCA","03-KI_GGAGGCGAAGGA","03-KI_CATCCAGCGCTT","03-KI_TGTCCGGAACTT","03-KI_TCCGTCAGGAAG","03-KI_CCTCCGATCTCN","03-KI_TAACCGTCGACT","03-KI_AGGTGTACCGGC","03-KI_CGCACAAGCATC","03-KI_AACTCTAGCCGG","03-KI_CTCCGGCCGCCA","03-KI_CACTTATTAACA","03-KI_AACGGCGCGGGG","03-KI_GCACGAGAAGAN","03-KI_TATGGGCTCAGT","03-KI_AGAGATCAAGCN","03-KI_AAGCGCGGGCTT","03-KI_ATTACTAAGCTG","03-MA_CGCGCCGGGATC","03-MA_GGAGGCTCTGCC","03-MA_AACCAGTCACCC","03-MA_TCCTAAGCAGAG","03-MA_TTTTACAATATA","03-MA_GGGTACTCTTCC","03-MA_CTGTGATGTGAN","03-MA_AATCATTGGAGG","03-FM_AATATCTTTCGT")
+
+endo.ecto2 <- c("03-FM_TATCGCAGTATT","06-FM_ATTGGGTGTTAT","06-MA_CATTTATACTGN","06-MA_GCAGCCACAGAC","06-MA_TGAGCCCTTGAC","06-MA_CCTGCCGTTACC","06-MA_AGTTAATTCTGT","06-MA_CTCAGCCGCATC","06-MA_TTACAGAGCTAG","06-MA_CTCGCCGCATCN","06-MA_GTTCCTCGGCGG","06-MA_GCTTCTTTGACA","06-MA_GCAGGAACTTCA","06-MA_AGGATAACAGTG","06-MA_CAGACTGAAGAC","06-MA_CGGAAGACGCGA","06-MA_GAAGCCCTGTTG","06-MA_AATAGGTACTGT","06-MA_TTGGAATTCACC","06-MA_GGTAGGTGAGAG","06-MA_CGTCGTTGAAAT","06-MA_ATTTTGTGGTAG","06-MA_AGCGTCTATTGT","06-MA_AATGGTACTGTN","06-MA_ATCGCGTGATCN","06-MA_CAGCTGAAGACN","06-MA_CGGAGACGCGAN","06-MA_GGTCGGTAACAT","06-MA_AGTACGACCTTG","06-MA_AGTCGACCTTGN","06-MA_GGTGGTGAGAGN","06-MA_CGCAACGGAATC","06-MA_CGCACGGAATCN","06-MA_ATCAGCGTGATC","06-MA_GACTCAACACCG","06-MA_TCAGAGGCCCGA","06-MA_CTGACCGAAACG","06-KI_TAGCCTCGTTCT","06-KI_GATCGGCCGTGC","06-KI_AAGATGTTCGGC","06-KI_AAGTGTTCGGCN","06-KI_CCATTGCGGTTC","06-KI_TTCGACGACTCN","06-KI_GATGTATTTAAA","06-KI_GCGGGACCTTCC","06-KI_TCACCCAGACAG","06-KI_TTCAGACGACTC","06-KI_TAGCTTCCACTT","06-KI_ACCGCGGTTGGT","11-PO_TCGTCTCGGACC","11-PO_GTCGTGCAAAAA","11-PO_TGGTCCAAATGG","11-PO_GCGCCGCAACGC","11-PO_CTTATAGGAGGC","11-PO_TAATATGGAAAA","11-PO_GATGATAATACT","11-PO_AGACGCAATGCA","11-PO_TCCGTCGGTGCC","11-PO_ACGACGTTATTA","11-PO_TTGTGGTCTTTC","11-PO_GGGTACACCTGC","11-PO_ACGAATTATTGC","11-PO_CACGGAGCCAGG","11-PO_AGATATGGCTCA","11-PO_GCGCGTCTTTCA","11-PO_GAATTGTTACTT","11-PO_GGGACTCCAATG","11-PO_TAGCGTTGCGCC","11-BU_GTGTAGGGGTCA","11-BU_CCTACGCAATAG","11-BU_TGCACCGGGAAC","11-BU_CCCGTGTCGTAA","11-BU_ACATTCGCGGAG","11-BU_AGGTCCAACTGT","11-BU_ATCCACTGTCCA","11-BU_TCTCCCCCCGCT","11-BU_GACAGCGGCGCC","11-BU_CCGTAAATAATC","11-BU_GTTGATCGAGTT","11-BU_GTCAGAGCACGC","11-BU_TGCAAGTATGCA","11-BU_AATGGAGCGTTA","11-BU_CCTGCACCACGT","11-BU_GCTTTTTCATCG","11-BU_GAACTTGTCGGC","11-BU_GCAACGACTTTC","11-BU_GTCAGTACCAAT","11-BU_CCTTTTTGGCTG","11-BU_AGCGGCAGATCG","11-BU_CTCACCTAATCA","11-BU_ATTGCCTGGTCC")
+
+#combine cells
+endo.ecto <- c(endo.ecto1, endo.ecto2)
+
+```
+
+```{r excludedoublets, message=F, warning=F, results='hide'}
+
+# We load the object from our original analysis
+# ds.ds <- readRDS("objects/genome_pc30.rds")
+
+# Excluding histone positive cells outside the male germline cluster
+
+# Isolate male germline cluster, cluster 16 in our original analysis
+ds.male <- SubsetData(object = ds.ds, ident.use= c(16), subset.raw = TRUE)
+
+## There are a few histone positive cells that are assigned to the germline clusters but group with epithelial cells
+## We manually select these cells using argument do.identify. 
+#select.cells <- TSNEPlot(object = ds.male, do.identify = TRUE)
+
+# Load cell ids that were excluded in our original analysis.
+select.cells <- c("02-P1_TATTTGCCGTTC","03-MA_CCATGTGACTCG","03-MA_TAACTTATGAGA","06-MA_TCGGACTTTCTT","06-MA_AGTTCCTTCCGA","06-MA_ATCCCTAGTGAC","06-MA_CTCAATCCCGGT","06-MA_ACACCCTGTCGA","06-MA_ACAGCGGCCCTC","06-MA_ATGCCTATGTCC","06-MA_CTCATCCCGGTN","06-MA_GTGGATGCAAAT","06-MA_CTAGGGTCTACN","06-MA_CGCGGGGTACAC","06-MA_GGTGGTGAGAGN","06-MA_CTAAGGGTCTAC","06-MA_CGCGCTCACGGA","06-MA_GCGCCAAACGCG","06-MA_CGTTTAACCGTA","06-MA_TTTCTCCATTGC","06-MA_TCGCTGCCCACA","06-MA_AGGTATCAGATT","06-MA_AACTATTGACAC","06-MA_ACTGTCATCGTT","06-MA_CAACACCTATAC","06-MA_TAGTTTACTGCC","06-MA_CTCTACGTCAAT","11-PO_CATCAGGAGATT","11-BU_ATCCACTGTCCA")
+
+# All male germline cluster cells
+cells <- ds.male@data@Dimnames[[2]]
+# Identify cells to keep
+cells.keep <- setdiff(cells, select.cells)
+# Updated subset of cells from the male germline
+ds.male <- SubsetData(object = ds.male, cells.use = cells.keep, subset.raw = TRUE)
+
+# Combined ids for suspected doublets
+db <- c(gland.endo, endo.ecto)
+
+# All cells
+cells <- ds.ds@data@Dimnames[[2]]
+# Identify cells to keep
+cells.keep <- setdiff(cells, db)
+
+# Remove doublets
+ds.cl <- SubsetData(object = ds.ds, cells.use = cells.keep, subset.raw = TRUE)
+
+# Get all cells not part of the male germline cluster, cluster 16 in our original analysis
+ds.else <- SubsetData(object = ds.cl, ident.remove= c(16), subset.raw = TRUE)
+
+# Identify cells with H2BE expression < 0.5
+gate1 <- WhichCells(ds.else , subset.name="g1835.t1|H2BE_STRPU", accept.high=0.5)
+
+# Identify cells with H10/H5 expression < 0.5
+gate2 <- WhichCells(ds.else, subset.name="g32541.t1|H5_CHICK", accept.high=0.5)
+
+# Identify cells not expressing either H2BE or H10A/H5 above the cutoff
+cells.keep.else <- intersect(gate1,gate2)
+
+# Filtered subset, doublets, germline cluster expcluded
+ds.else <- SubsetData(ds.else, cells.use = cells.keep.else, subset.raw = TRUE)
+# Add germline cluster cells
+ds.g.s1 <- MergeSeurat(ds.male, ds.else)
+
+rm(ds.ds)
+rm(ds.male)
+rm(ds.else)
+
+```
+
+## Clustering {-}
+
+At this stage the data set includes `r length(ds.g.s1@meta.data$nGene)` cells with a median of `r median(ds.g.s1@meta.data$nGene)` genes and a median of `r median(ds.g.s1@meta.data$nUMI)` UMIs per cell. We cluster the cells as before, annotate the t-SNE representation (Fig. \ref{fig:annottsne}) and plot metagenes from NMF analysis wg_K84 (Fig. \ref{fig:metagenes}). \
+
+```{r recluster, echo=TRUE, cache=TRUE, cache.lazy = FALSE, message=F, warning=F, results='hide', fig.keep='none'}
+
+# We cluster the remaining cells
+
+# Find variable genes
+ds.g.s1 <- FindVariableGenes(object = ds.g.s1, mean.function = ExpMean, dispersion.function = LogVMR, 
+    x.low.cutoff = 0.05, x.high.cutoff = 4, y.cutoff = 0.5)
+# Scale
+ds.g.s1 <- ScaleData(object = ds.g.s1)
+# Do PCA on highly variable genes
+ds.g.s1 <- RunPCA(object = ds.g.s1, pc.genes = ds.g.s1@var.genes, pcs.compute = 40, do.print = TRUE, pcs.print = 1:5, 
+    genes.print = 20)
+# Project PCA to find genes that weren't scored as highly variable, but should belong to a given PC and include them.
+ds.g.s1 <- ProjectPCA(object = ds.g.s1)
+
+# Perform permutation test to directly calculate p-value
+#ds.g.s1 <- JackStraw(object = ds.g.s1, num.pc = 40, num.replicate = 100, do.print = FALSE)
+#JackStrawPlot(object = ds.g.s1, PCs=1:40)
+
+# Approximation of amount of variance encoded by each PC
+PCElbowPlot(object = ds.g.s1, num.pc = 40)
+
+# Find cluster
+ds.g.s1 <- FindClusters(object = ds.g.s1, reduction.type = "pca", dims.use = 1:30, force.recalc = TRUE, resolution = 1.5)
+ds.g.s1 <- RunTSNE(object = ds.g.s1, dims.use = c(1:30), do.fast = T, perplexity = 40)
+
+TSNEPlot(object = ds.g.s1, group.by="res.1.5", do.return=T, do.label = T)
+
+#saveRDS(ds.ds,"objects/genome_S1_pc30.rds")
+
+```
+
+```{r annottsne, fig.height = 9, fig.width = 9, message=F, warning=F, fig.cap= "Annotated t-SNE plot. bat: battery cell, db: doublet, ecEP: ectodermal epithelial cell, enEP: endodermal epithelial cell, fmgl: female germ-line, gc: gland cell, gmgc: granular, i: cells of the interstitial lineage, id: integration doublet, mucous gland cell, mgl: male germline, mp: multiplet, nb: nematoblast, nc: neuronal cell, nem: nematocyte, pd: suspected phagocytosis doublet, prog: progenitor, SC: stem cell, smgc: spumous mucous gland cell, tent: tentacle, unident: unidentified, zmg: zymogen gland cell."}
+
+# We load the object from our original analysis
+#ds.g.s1 <- readRDS("objects/genome_S1_pc30.rds")
+
+#LABELING CLUSTER,
+#store cluster numbering
+ds.g.s1 <- StashIdent(object = ds.g.s1, save.name = "cluster_numbering")
+ds.g.s1 <- SetAllIdent(ds.g.s1, "res.1.5")
+
+current.cluster.ids <- as.character(0:40)
+
+#run this to restore original cluster numbering
+ds.g.s1 <- SetAllIdent(object = ds.g.s1, id = "cluster_numbering")
+
+cluster.names <- c("ecEp_SC1","enEp_SC1","enEp_SC2","i_SC","i_nb1","ecEp_nem1(pd)","i_nc_prog","enEp_SC3","i_smgc","ecEp_bat(mp)","ecEp_head/hyp","enEp_head","i_nb2","i_nb4","enEp_tent","i_fmgl1","i_fmgl2","i_gmgc","i_mgl","i_zmg2","i_nb3","ecEp_nem2(id)","enEp_foot","ecEp_bd","i_nem","i_gc_nc_prog","i_nc2","ecEp_SC2","enEp_nem(pd)","i_nc1","i_nc8","i_nc6","ecEp_ped","i_zmg1","i_nc7","i_nb5","i_nc3","i_nc4","unident","i_nc5","unident2")
+
+#update names in Seurat object
+ds.g.s1@ident <- plyr::mapvalues(x = ds.g.s1@ident, from = current.cluster.ids, to = cluster.names)
+
+TSNEPlot(object = ds.g.s1, do.return=T, do.label = T, no.legend=TRUE, return = FALSE, label.size = 5.5, pt.size = 0.5)
+
+```
+
+```{r metagenes, fig.height = 18, fig.width = 18, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Selected metagenes identified in NMF analysis for the whole dataset after mapping to the Hydra 2.0 genome (wg K84). A metagene describes a set of genes that are co-expressed in the highlighted cell population. A) Annotated t-SNE plot. B) Tentacle ectodermal epithelial cells. This metagene includes transcripts that are expressed in the epithelial cell of a battery cell complex since expression is not found in neuronal or nematocyte cell populations. C) Ectodermal epithelial cells, head/hypostome. D) Ectodermal epithelial cells, body column. E) Ectodermal epithelial cells, basal disk. F) Endodermal epithelial cells, body column. G) Endodermal epithelial cells, foot. H) Endodermal epithelial cells, tentacle. I) Endodermal epithelial cells, hypostome. J) Early stage nematoblast, free and phagocytosed. K) Mid stage nematoblast, free and  phagocytosed. L,M) Late nematoblast, singletons and integrated. N) Mature nematocyte, singletons and integrated. O) Neuronal cell progenitors. P) Differentiated neurons, progenitors. Q,R) Spumous mucous gland cells. S) Granular mucous gland cells, hypostome. T) Granular mucous gland cells, mid/lower head. U) Granular mucous gland cells/zymogen gland cells. V,W) Zymogen gland cells. X) Female germline cells. Y) Male germline cells."}
+
+# Load metagene scores for each cell
+cellScores <- read.csv("nmf/wg_K84/GoodMeta_CellScores.csv", row.names = 1, check.names = F)
+cellScores <- as.data.frame(cellScores)
+# Make metagenes columns
+cellScores <-t(cellScores)
+# Fix cell ids
+rownames(cellScores) <- sub("X", "", rownames(cellScores))
+rownames(cellScores) <- sub("\\.", "-", rownames(cellScores))
+
+# Add scores
+cellScores.ds.g.s1 <- cellScores[match(rownames(ds.g.s1@meta.data),rownames(cellScores)),]  
+ds.g.s1@meta.data <- cbind(ds.g.s1@meta.data,cellScores.ds.g.s1)
+
+p1 <- TSNEPlot(object = ds.g.s1, do.label = T, label.size = 3, pt.size = 0.5, cex.names = 6, no.legend = TRUE, do.return = TRUE)
+p2 <- FeaturePlot(ds.g.s1, c("wg45","wg64","wg17","wg31","wg5","wg47","wg35","wg74","wg42","wg32","wg13","wg27","wg52","wg56","wg12","wg76","wg49","wg61","wg15","wg38","wg18","wg59","wg24","wg26"), cols.use = c("grey", "blue"), do.return = TRUE)
+
+#generate plotlist
+plotlist <- prepend(p2, list(p1))
+
+plot_grid(plotlist = plotlist, labels="AUTO", label_size = 25, align = "h", ncol=5)
+
+saveRDS(ds.ds,"objects/Hydra_Seurat_Whole_Genome.rds"))
+
+```
+
+### Software versions {-}
+
+This document was computed on `r format( Sys.time(), "%a %b %d %X %Y" )` with the following R package versions.\
+
+```{r session_summary, echo=FALSE, include=TRUE, comment=NA}
+	sessionInfo()
+```
+
+## References {-}
+
+

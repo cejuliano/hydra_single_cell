@@ -1,0 +1,685 @@
+---
+title: "SA02 - Cluster analysis using final cut-offs, initial doublet exclusion"
+author: "Stefan Siebert"
+date: "November 1, 2018"
+bibliography: SA.bib
+csl: bib.csl
+site: "bookdown::bookdown_site"
+output:
+  bookdown::pdf_document2:
+    toc: FALSE
+linestretch: 0.5
+fontsize: 11 pt
+geometry: margin= 2.0 cm
+---
+
+\fontsize{10}{18}
+
+```{r knit_prep, echo=F, results='hide', message=F, warning=F}
+
+library("knitr")
+opts_chunk$set(tidy.opts=list(width.cutoff=80),tidy=TRUE,dev="png",dpi=150)
+
+```
+
+## Summary {-}
+
+We recluster the cells using >300 <7k genes, >500UMI < 50k UMIs as cut-offs and explore the dataset. The resulting data object is the starting point for lineage subclusterings.\  
+
+## Preliminaries {-}
+
+```{r preliminaries, include=TRUE, message=F, warning=F}
+
+library(Seurat)
+library(dplyr)
+library(Matrix)
+library(gtable)
+library(grid)
+library(gridExtra)
+library(rlang)
+
+# Function to find the full ID for gene of interest
+# Gene ids have are of the format txxxaep|swiss_prot_id_best_hit
+hFind <- function (x) {
+  return (ds.ds@data@Dimnames[[1]][grep(x,ds.ds@data@Dimnames[[1]],ignore.case = T)])
+}
+
+# We assume a folder "objects" in the markdown directory that contains our raw count object and all Seurat objects
+
+```
+
+## Load object from permissive analysis {-}
+
+```{r load raw}
+
+# Load object from permissive analysis
+ds.ds <- readRDS("objects/ds.ds.g200_8k_U400_70k_PC1_19.rds")
+ds.ds <- MakeSparse(ds.ds)
+
+```
+
+## Apply selected cut-offs for genes and UMIs {-}
+
+```{r filter}
+
+# Apply final gene/UMI cut-offs
+ds.ds <- FilterCells(object = ds.ds, subset.names = c("nGene", "nUMI"), low.thresholds = c(300,500) , high.thresholds = c(7000, 50000))
+
+```
+
+## Pre-clustering workflow {-}
+
+We scale the data and identify genes that vary more than expected for their expression level (Fig. \ref{fig:vargenes}).\
+
+```{r vargenes, cache.lazy = FALSE, cache=TRUE, results='hide', fig.height = 5, fig.width = 5, out.height="30%", fig.align='center', fig.cap= "Variable genes using a dispersion cut-off of 0.5 and an expression cut-off of 0.05."}
+
+# Identify highly variable genes
+ds.ds <- FindVariableGenes(object = ds.ds, 
+    mean.function = ExpMean, dispersion.function = LogVMR, 
+    x.low.cutoff = 0.05, x.high.cutoff = 4, y.cutoff = 0.5)
+
+```
+
+```{r scale, cache.lazy = FALSE, cache=TRUE, results='hide'}
+
+# Scale
+ds.ds <- ScaleData(object = ds.ds)
+
+```
+
+## Perform linear dimensional reduction {-}
+
+In preparation for graph-based clustering we perform PCA on the scaled data using genes in object@var.genes. `r length(ds.ds@var.genes)` genes are identified as variable given the selected cut-offs for dispersion and expression level.\
+
+```{r pca, results='hide'}
+
+# PCA on highly variable genes
+ds.ds <- RunPCA(object = ds.ds, pc.genes = ds.ds@var.genes, pcs.compute = 40, do.print = TRUE, pcs.print = 1:5)
+
+```
+
+We score each gene in the dataset (including genes not included in the PCA) based on their correlation with the calculated components.\
+
+```{r project pca, results='hide'}
+
+# Project PCA
+ds.ds <- ProjectPCA(object = ds.ds)
+
+```
+
+## Community detection clustering {-}
+
+We cluster the cells.\
+
+```{r findcluster, cache=TRUE, cache.lazy = FALSE}
+
+# Find cluster
+ds.ds <- FindClusters(object = ds.ds, reduction.type = "pca", dims.use = 1:19, force.recalc = TRUE, resolution = 1.5, print.output = 0)
+
+```
+
+## t-SNE embedding {-}
+
+We apply t-SNE dimensionality reduction for visualization purposes. 43 clusters are recovered using a resolution parameter of 1.5 that were annotated using published expression patterns (Fig. \ref{fig:annottsne}).\
+
+```{r runtsne, cache.lazy = FALSE, cache=TRUE, message=F, warning=F}
+
+# Run t-SNE
+ds.ds <- RunTSNE(object = ds.ds, dims.use = c(1:19), do.fast = T)
+
+
+# Save object
+# saveRDS(ds.ds,"objects/ds.ds.g300_7k_U500_50k_PC1_19.rds")
+
+```
+
+```{r annotate_tsne_identity}
+
+# Since t-SNE is not deterministic we here load the object of our original analysis
+#ds.ds <- readRDS("objects/ds.ds.g300_7k_U500_50k_PC1_19.rds")
+
+# Label clusters
+# Store cluster numbering
+ds.ds <- StashIdent(object = ds.ds, save.name = "cluster_numbering")
+ds.ds <- SetAllIdent(ds.ds, "res.1.5")
+
+current.cluster.ids <- as.character(0:42)
+
+# Run this to restore original cluster numbering
+ds.ds <- SetAllIdent(object = ds.ds, id = "cluster_numbering")
+
+cluster.names <- c("enEp_SC1","enEp_SC2","ecEp_SC1","ecEp_SC2","i_SC","i_nb1","i_nb2","enEp_SC3","ecEp_nem1(pd)","i_smgc","i_nc_prog","enEp_foot","i_gmgc","i_nb3","ecEp_bat","ecEp_head","i_nc1","i_gc_nc_prog","i_nc2","i_zmg1","i_fmgl1","ecEp_bd","ecEp_nem2(mp)","i_fmgl2","enEp_head","i_nc3","i_nc4","enEp_tent","i_nb3","i_mgl1","i_nb4","i_nc5","i_nc6","enEp_nem1(pd)","i_nc7","i_mgl2","i_zmg2","db1","db2","unident","i_nc8","enEp_tent(pd)","db3")
+
+# Update names in Seurat object
+ds.ds@ident <- plyr::mapvalues(x = ds.ds@ident, from = current.cluster.ids, to = cluster.names)
+
+```
+
+```{r annottsne, fig.height = 9, fig.width = 9, message=F, warning=F, fig.cap= "Annotated t-SNE - final gene and UMI cut-offs. bat: battery cell, db: doublet, ecEP: ectodermal epithelial cell, enEP: endodermal epithelial cell, fmgl: female germ-line, gc: gland cell, gmgc: granular mucous gland cell, i: cell of the interstitial lineage, id: integration doublet, mgl: male germline, mp: multiplet, nb: nematoblast, nc: neuronal cell, nem: nematocyte, pd: suspected phagocytosis doublet, prog: progenitor, SC: stem cell, smgc: spumous mucous gland cell, tent: tentacle, zmg: zymogen gland cell."}
+
+TSNEPlot(object = ds.ds, do.return=T, do.label = T, no.legend=TRUE, pt.size = 0.5) + ggtitle("g>300 <7k genes, UMI>500<50k, 26,843 cells")
+
+```
+
+## Doublet identification {-}
+
+Exploratory analyses of gene expression revealed doublet transcriptional signatures for cells in clusters db1, db2 and db3 (Fig. \ref{fig:annottsne}). Cells in cluster db1 show expression for both endodermal epithelial cell and zymogen gland cell marker genes (Fig. \ref{fig:endogland}). Since zymogen gland cells reside in between endodermal epithelial cells these cells may correspond to dissociation doublets. Gland cells are somatic differentiation products of the interstitial lineage, a lineage distinct from the endodermal epithelial cell lineage [@Bode:1987bq]. Cells in cluster db2 are positive for endodermal and ectodermal epithelial marker genes (Fig. \ref{fig:endoecto}). These cells may correspond to Drop-seq doublets (two cells were encapsulated with a single bead). We exclude these clusters from downstream analyses.  
+
+Cells in cluster db3 were positive for histone expression (*H2BL1* (t11585), *H10A* (t38683)) as well as for endodermal epithelial cell markers. These histones were furthermore found to be expressed in cells of multiple clusters (Fig. \@ref(histone) A, B). RNA in situ hybridization demonstrated that these two histones are exclusively expressed in cells of the male germ-line (Fig. \@ref(histone) C-F). 87.7% of cells that express either histone *H2BL1* and/or *H10A* outside the male germline clusters originated from suspensions that intentionally had polyps with testes in them (library 03-MA: male-spike in, 06-MA: all male library). We hypothesize that small spermatids and sperm progenitors were missed in the cell suspension leading to inaccurate cell concentrations in the Drop-seq experiments and to the generation of Drop-seq doublets. We here exclude all cells positive for these histones outside the male germline clusters. We perform NMF analysis (analysis whole transcriptome - wt_K96) using the remaining cells (25,052) to identify metagenes, sets of genes that are co-expressed in specific populations of cells (supplementary file SA07_NMF, supplementary methods).\
+
+```{r endogland, fig.height = 4, fig.width = 16, message=F, warning=F, fig.keep='last', fig.cap= "Doublet identification (endodermal epithelial cell - zymogen gland cell). Co-expression (red) of endodermal epithelial cell (green) and zymogen gland cells markers (blue). Cluster (db1) with cells co-expressing both sets of markers was excluded from downstream analyses."}
+
+# Cells that co-express gland cell and endodermal epithelial cell genes
+#p <- FeaturePlot(ds.ds, c(hFind("t31900aep"),hFind("t34741aep"),hFind("t30697aep"),hFind("t4961aep"),hFind("t18356aep"),hFind("t8678aep"),hFind("t14102aep"),hFind("t20198aep")), cols.use=c("grey", "blue"), do.return=TRUE)
+
+# plot
+#plot_grid(p[[1]],p[[2]],p[[3]],p[[4]],p[[5]],p[[6]],p[[7]],p[[8]], labels="AUTO", label_size = 20, align = "h", ncol=4)
+
+d1 <- FeaturePlot(object = ds.ds, features.plot = c(hFind("t31900aep"),hFind("t18356aep")), cols.use = c("grey", "green", "blue", "red"), overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d2 <- FeaturePlot(object = ds.ds, features.plot = c(hFind("t34741aep"), hFind("t8678aep")), cols.use = c("grey", "green", "blue", "red"), overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d3 <- FeaturePlot(object = ds.ds, features.plot = c(hFind("t30697aep"), hFind("t14102aep")), cols.use = c("grey", "green", "blue", "red"), overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d4 <- FeaturePlot(object = ds.ds, features.plot = c(hFind("t4961aep"), hFind("t20198aep")), cols.use = c("grey", "green", "blue", "red"), overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+
+# Plot with tsne
+
+plot_grid(d1[[1]],d2[[1]],d3[[1]],d4[[1]], ncol=4)
+
+```
+
+```{r endoecto, fig.height = 4, fig.width = 16, message=F, warning=F, fig.keep='last', fig.cap= "Doublet identification (endodermal epithelial cell - ectodermal epithelial cell). Co-expression (red) of endodermal epithelial cell (green) and ectodermal epithelial cell markers (blue). Cluster (db2) with cells co-expressing both sets of markers was excluded from downstream analyses."}
+
+#p <- FeaturePlot(ds.ds, c(hFind("t31900aep"),hFind("t34741aep"),hFind("t30697aep"),hFind("t4961aep"),hFind("t13977aep"), hFind("t24244aep"), hFind("t12614aep"), hFind("t23162aep")), cols.use=c("grey", "blue"), do.return=TRUE)
+  
+#plot_grid(p[[1]],p[[2]],p[[3]],p[[4]],p[[5]],p[[6]],p[[7]],p[[8]], labels="AUTO", label_size = 20, align = "h", ncol=4)
+# dev.off()
+
+d1 <- FeaturePlot(object = ds.ds, features.plot = c(hFind("t31900aep"),hFind("t13977aep")), cols.use = c("grey", "green", "blue", "red"), overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d2 <- FeaturePlot(object = ds.ds, features.plot = c(hFind("t34741aep"),hFind("t24244aep")), cols.use = c("grey", "green", "blue", "red"), overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d3 <- FeaturePlot(object = ds.ds, features.plot = c(hFind("t30697aep"),hFind("t12614aep")), cols.use = c("grey", "green", "blue", "red"), overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d4 <- FeaturePlot(object = ds.ds, features.plot = c(hFind("t4961aep"),hFind("t23162aep")), cols.use = c("grey", "green", "blue", "red"), overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+
+# Plot with tsne
+
+plot_grid(d1[[1]],d2[[1]],d3[[1]],d4[[1]], ncol=4)
+
+```
+
+![\label{histone} Expression of male germline specific histone proteins. A) t-SNE plot showing expression of histone *H2BL1* (t11585), B) t-SNE plot showing expression of histone *H10A* (t38683). C-D) RNA in situ hybdridization using histone *H2BL1* probe. C) No expression was detected in female polyps with developing eggpatch. D) Expression in polyps with testes. E-F) RNA in situ hybdridization using histone *H10A* probe. E) No expression was detected in female polyps with developing eggpatch. F) Expression in polyps with testes.](SA_figures/SA02_figures/histone.jpg){width=12cm}
+
+```{r excludedoublets, message=F, warning=F, results='hide'}
+
+## Doublet exclusion, cells that express male germline specific histones outside the germline
+
+# Explore co-expression of histones
+# FeaturePlot(object = ds.ds, features.plot = c("t11585aep|H2BL1_PSAMI","t38683aep|H10A_XENLA"), no.legend = TRUE, min.cutoff = 0.2, max.cutoff = 0.5)
+# FeaturePlot(object = ds.ds, features.plot = c("t11585aep|H2BL1_PSAMI","t38683aep|H10A_XENLA"), no.legend = TRUE, cols.use=c("grey", "blue"))
+# FeaturePlot(object = ds.ds, features.plot = c("t11585aep|H2BL1_PSAMI","t38683aep|H10A_XENLA"), cols.use = c("grey", "red", "blue", "green"), overlay = TRUE, no.legend = FALSE)
+
+# jpeg(("SA_figures/SA02_figures/histones.jpeg"), width=300, height=150, units = "mm", res=300, bg ="white")
+# FeaturePlot(object = ds.ds, features.plot = c("t11585aep|H2BL1_PSAMI","t38683aep|H10A_XENLA"), no.legend = TRUE, cols.use=c("grey", "blue"))
+# dev.off()
+
+## Exclude histone positive cells outside the germline clusters i_mgl1 and i_mgl2; exclude doublet clusters db1 and db2
+
+# We isolate cells from male germline clusters
+ds.male <- SubsetData(object = ds.ds, ident.use= c("i_mgl1","i_mgl2"), subset.raw = TRUE)
+# 602 cells
+
+## Plot germline cluster cells
+
+# TSNEPlot(object = ds.male, do.return=T, do.label = T, no.legend=TRUE, pt.size = 0.5) 
+
+## There are a few histone positive cells that are assigned to the germline clusters but group with epithelial cells
+## We manually select these cells using argument do.identify. 
+
+# select.cells <- TSNEPlot(object = ds.male, do.identify = TRUE)
+# length(select.cells)
+# 66 cells
+
+#cells to be excluded
+#> select.cells
+# [1] "11-BU_CGGGCAATGCCA" "06-MA_ACAGCGGCCCTC" "06-MA_CCTTGGTCCAAC" "01-D1_TTCAAATTCACC" "01-P2_CCGCTTAAGGAN" "03-MA_GGGTACTCTTCC" "03-MA_CTGTGATGTGAN"
+# [8] "03-MA_AATCATTGGAGG" "03-MA_TCCTTCGCTGGA" "03-MA_CTCAACCCTCGT" "06-MA_CTCAGCCGCATC" "06-MA_CTCGCCGCATCN" "06-MA_GTTCCTCGGCGG" "06-MA_GCTTCTTTGACA"
+#[15] "06-MA_GCAGGAACTTCA" "06-MA_AGGATAACAGTG" "06-MA_CAGACTGAAGAC" "06-MA_CGGAAGACGCGA" "06-MA_GAAGCCCTGTTG" "06-MA_AATAGGTACTGT" "06-MA_TTGGAATTCACC"
+#[22] "06-MA_GGTAGGTGAGAG" "06-MA_ACCATGTTGTTN" "06-MA_ACCAATGTTGTT" "06-MA_CGTCGTTGAAAT" "06-MA_ATTTTGTGGTAG" "06-MA_AGCGTCTATTGT" "06-MA_AATGGTACTGTN"
+#[29] "06-MA_ATCGCGTGATCN" "06-MA_CAGCTGAAGACN" "06-MA_CGGAGACGCGAN" "06-MA_AGTACGACCTTG" "06-MA_GGTCGGTAACAT" "06-MA_TGGGTTATCGGG" "06-MA_AGGTAACAGTGN"
+#[36] "06-MA_AGTCGACCTTGN" "06-MA_GGATTGAATCAG" "06-MA_GGTGGTGAGAGN" "06-MA_CGCAACGGAATC" "06-MA_CGCACGGAATCN" "06-MA_GCACCGGCCATC" "06-MA_ATCAGCGTGATC"
+#[43] "06-MA_TGTTGCGTGCGG" "06-MA_CTGGGGAGCAGG" "06-MA_TCTGTTTCGAAG" "06-MA_CAATCATGACTT" "06-MA_TTCCCCCAGGAT" "06-MA_AAATACGCTTCA" "06-MA_CTAGCTTGTTTC"
+#[50] "06-MA_CACCAATCTCCA" "06-MA_GACTCAACACCG" "06-MA_GCCTAATGGATG" "06-MA_CGTCTTGAGTTA" "06-MA_TACTTAGTTTAT" "06-MA_ACTAAGTCCTGT" "06-MA_GCGCTATCGTAT"
+#[57] "06-MA_GGGTGGATTATA" "06-MA_AAGCATCCCGTT" "06-MA_TGGGGGTGCCCG" "06-MA_TCAGAGGCCCGA" "06-MA_CTGACCGAAACG" "06-KI_TAGCCTCGTTCT" "11-BU_GTGTAGGGGTCA"
+#[64] "11-BU_GCATAGAACCTG" "06-MA_GTGGATGCAAAT" "06-MA_GTCCGCGATTCA"
+
+# We here provide ids of cells that were manually selected and excluded
+select.cells <- c("11-BU_CGGGCAATGCCA","06-MA_ACAGCGGCCCTC","06-MA_CCTTGGTCCAAC","01-D1_TTCAAATTCACC","01-P2_CCGCTTAAGGAN","03-MA_GGGTACTCTTCC","03-MA_CTGTGATGTGAN","03-MA_AATCATTGGAGG","03-MA_TCCTTCGCTGGA","03-MA_CTCAACCCTCGT","06-MA_CTCAGCCGCATC","06-MA_CTCGCCGCATCN","06-MA_GTTCCTCGGCGG","06-MA_GCTTCTTTGACA","06-MA_GCAGGAACTTCA","06-MA_AGGATAACAGTG","06-MA_CAGACTGAAGAC","06-MA_CGGAAGACGCGA","06-MA_GAAGCCCTGTTG","06-MA_AATAGGTACTGT","06-MA_TTGGAATTCACC","06-MA_GGTAGGTGAGAG","06-MA_ACCATGTTGTTN","06-MA_ACCAATGTTGTT","06-MA_CGTCGTTGAAAT","06-MA_ATTTTGTGGTAG","06-MA_AGCGTCTATTGT","06-MA_AATGGTACTGTN","06-MA_ATCGCGTGATCN","06-MA_CAGCTGAAGACN","06-MA_CGGAGACGCGAN","06-MA_AGTACGACCTTG","06-MA_GGTCGGTAACAT","06-MA_TGGGTTATCGGG","06-MA_AGGTAACAGTGN","06-MA_AGTCGACCTTGN","06-MA_GGATTGAATCAG","06-MA_GGTGGTGAGAGN","06-MA_CGCAACGGAATC","06-MA_CGCACGGAATCN","06-MA_GCACCGGCCATC","06-MA_ATCAGCGTGATC","06-MA_TGTTGCGTGCGG","06-MA_CTGGGGAGCAGG","06-MA_TCTGTTTCGAAG","06-MA_CAATCATGACTT","06-MA_TTCCCCCAGGAT","06-MA_AAATACGCTTCA","06-MA_CTAGCTTGTTTC","06-MA_CACCAATCTCCA","06-MA_GACTCAACACCG","06-MA_GCCTAATGGATG","06-MA_CGTCTTGAGTTA","06-MA_TACTTAGTTTAT","06-MA_ACTAAGTCCTGT","06-MA_GCGCTATCGTAT","06-MA_GGGTGGATTATA","06-MA_AAGCATCCCGTT","06-MA_TGGGGGTGCCCG","06-MA_TCAGAGGCCCGA","06-MA_CTGACCGAAACG","06-KI_TAGCCTCGTTCT","11-BU_GTGTAGGGGTCA","11-BU_GCATAGAACCTG","06-MA_GTGGATGCAAAT","06-MA_GTCCGCGATTCA")
+
+# Get all cell ids associated with germ-line clusters i_mgl1 and i_mgl2
+cells <- ds.male@data@Dimnames[[2]]
+# Identify cells to keep
+cells.keep <- setdiff(cells, select.cells)
+
+# Subset the dataset
+ds.male <- SubsetData(object = ds.male, cells.use = cells.keep, subset.raw = TRUE)
+
+# Subset of cells without male germline, cluster db1 (zymogen gland cell/endodermal epithelial cell doublet cluster), cluster db2 (endodermal epithelial cell / ectodermal epithelial cell doublet cluster))
+ds.else <- SubsetData(object = ds.ds, ident.remove= c("i_mgl1","i_mgl2","db1","db2"), subset.raw = TRUE)
+# 25917 cells
+
+# Keep cells not expressing H2BL1 in cells outside germline clusters
+gate1 <- WhichCells(ds.else , subset.name="t11585aep|H2BL1_PSAMI", accept.high=0.5)
+# length(gate1)
+# [1] 24694
+
+# Keep cells not expressing H10A in cells outside germline clusters
+gate2 <- WhichCells(ds.else, subset.name="t38683aep|H10A_XENLA", accept.high=0.5)
+# Length(gate2)
+# [1] 24833
+
+#identify cells not expressing either H2BL1 or H10A
+cells.keep.else <- intersect(gate1,gate2)
+length(cells.keep.else)
+# 24517
+
+# Create Seurat subset for cells outside male germline
+ds.else <- SubsetData(ds.else, cells.use = cells.keep.else, subset.raw = TRUE)
+# Merge germline subset with all other cells
+ds.s1 <- MergeSeurat(ds.male, ds.else)
+
+# Remove objects that are no longer needed
+rm(ds.ds)
+rm(ds.male)
+rm(ds.else)
+
+```
+
+## Clustering of cells {-}
+
+We cluster the cells as before. We tested PCs from 1:19 through 1:37 with three different seeds (1 (default), 100, 4024) and three perplexities, 20, 30 (default), 40. No principal components were excluded. The selected analysis used PCs 1:31 and a perplexity of 40 (seed=100) (Fig. \ref{fig:tsneclust}). \
+
+```{r clustering, echo=TRUE, cache=TRUE, cache.lazy = FALSE, message=F, warning=F, results='hide', fig.keep='none'}
+
+# Identify highly variable genes
+ds.s1 <- FindVariableGenes(object = ds.s1, 
+    mean.function = ExpMean, dispersion.function = LogVMR, 
+    x.low.cutoff = 0.05, x.high.cutoff = 4, y.cutoff = 0.5)
+
+# Scale
+ds.s1 <- ScaleData(object = ds.s1)
+
+# PCA on highly variable genes
+ds.s1 <- RunPCA(object = ds.s1, pc.genes = ds.s1@var.genes, pcs.compute = 40, do.print = TRUE, pcs.print = 1:5)
+
+# Project PCA
+ds.s1 <- ProjectPCA(object = ds.s1)
+
+## Determine statistically significant PCs
+#ds.s1 <- JackStraw(object = ds.s1, num.pc = 40, num.replicate = 100, do.print = FALSE)
+#JackStrawPlot(object = ds.s1, PCs=1:40)
+
+# Approximate amount of variance encoded by each PC
+# Look at a plot of the standard deviations of the principle components and draw cutoff where there is a clear elbow in the graph
+PCElbowPlot(object = ds.s1, num.pc = 40)
+
+# Find cluster
+ds.s1 <- FindClusters(object = ds.s1, reduction.type = "pca", dims.use = 1:19, force.recalc = TRUE, resolution = 1.5, print.output = 0)
+# Run t-SNE
+ds.s1 <- RunTSNE(object = ds.s1, dims.use = c(1:31), seed.use = 100, perplexity = 40, do.fast = T)
+
+## Save object
+#saveRDS(ds.ds,"objects/Hydra_Seurat_Whole_Transcriptome.rds")) 
+
+```
+
+```{r tsneclust, fig.height = 9, fig.width = 9, message=F, warning=F, fig.cap= "t-SNE plot after applying final cut-offs and initial doublet exclusion."}
+
+# Since t-SNE is not deterministic we here load the object of our original analysis
+ds.s1 <- readRDS("objects/Hydra_Seurat_Whole_Transcriptome.rds")
+
+# Run this to restore original cluster numbering
+ds.s1 <- SetAllIdent(object = ds.s1, id = "cluster_numbering")
+
+TSNEPlot(object = ds.s1, do.return=T, do.label = T, no.legend=TRUE, pt.size = 0.5)
+
+```
+
+## Cluster annotation {-}
+
+We annotate the t-SNE representation using marker genes (Fig. \ref{fig:annotate}, \ref{fig:annottsne2}). We save the object: Hydra_Seurat_Whole_Transcriptome.rds. \
+
+```{r function annotate, include=F}
+
+# Function to annotate/rename genes
+update.names <- function(gene.names, new.names) {
+  for (i in 1:length(gene.names)) {
+    rownames(ds.s1@data)[which(rownames(ds.s1@data) == gene.names[i])] <<- new.names[i]
+  }
+}
+
+# Function to find the full ID for gene of interest
+hFind <- function (x) {
+  return (ds.s1@data@Dimnames[[1]][grep(x,ds.s1@data@Dimnames[[1]],ignore.case = T)])
+}
+
+```
+
+```{r annotate, fig.height = 18, fig.width = 18, message=F, warning=F, fig.keep='last', fig.cap= "Selected markers used for cluster annotation. A) t-SNE plot. B) endoderm - *arminin1a* [@Augustin:2009kg]. C) endoderm/ectoderm hypostome - *Wnt3* [@Hobmayer:2000gj]. D) endoderm foot/peduncle - *CnNK-2* [@Grens:1996eo]. E) ectoderm/endoderm - *PPOD1* [@Thomsen:2006ia]. F) ectoderm head - *ks1* [@Endl:1999wt]. G) ectoderm tentacle - *HyAlx* [@Smith:2000ti]. H) multipotent i-cells/progenitors/female and male germline - *Cnnos1* [@Mochizuki:2000wu], I) neuron progenitor/neurons - *ELAV2* (t3974, this study), J) zymogen gland cell - *HyDkk1/2/4-A* [@Augustin:2006bb; @Guder:2006gg]. K) mucous gland cells - *HyTSR1* [@Siebert:2008kf]. L) mucous gland cell - *MUC2* (t7059). M) nematogenesis/biological doublets - *nematogalectin B* [@Hwang:2010hx]. N) differentiated nematocytes/battery cell - *nematocillin A* [@Hwang:2008gd]. O) female germ line - *periculin1a* [@Fraune:2010hh]. P) male germline - histone *H2BL1* (t11585, this study)."}
+
+# Annotate t-SNE
+# Selected genes used for annotation
+gene.names <- c(hFind("t31074aep"),hFind("t14194aep"),hFind("t25396aep"),hFind("t16043aep"),hFind("t4498aep"),hFind("t16456aep"),hFind("t11407aep"),hFind("t3974aep"),hFind("t8678aep"),hFind("t12596aep"),hFind("t7059aep"),hFind("t13480aep"),hFind("t23176aep"),hFind("t11117aep"),hFind("t11585aep"))
+
+# Update gene names
+new.names <- c("arminin1a","HyWnt3","CnNK-2","PPOD1","ks1","HyAlx","Cnnos1","ELAV2 (t3974)","HyDkk1/2/4 A","HyTSR1","MUC2 (t7059)","nematogalectin B","nematocilin A","periculin1a","H2BL1 (t11585)")
+
+# Annotate
+update.names(gene.names, new.names)
+
+# Plot with tsne
+p1 <- TSNEPlot(object = ds.s1, group.by="res.1.5", do.label = T, label.size = 5, pt.size=0.5, cex.names=6, no.legend = TRUE, do.return=TRUE)
+p2 <- FeaturePlot(ds.s1, c("arminin1a","HyWnt3","CnNK-2","PPOD1","ks1","HyAlx","Cnnos1","ELAV2 (t3974)","HyDkk1/2/4 A","HyTSR1","MUC2 (t7059)","nematogalectin B","nematocilin A","periculin1a","H2BL1 (t11585)"), cols.use=c("grey", "blue"), do.return=TRUE)
+
+plotlist <- prepend(p2, list(p1))
+
+plot_grid(plotlist= plotlist, labels="AUTO", label_size = 20, align = "h", ncol=4)
+
+```
+
+```{r annottsne2, fig.height = 9, fig.width = 9, message=F, warning=F, fig.keep='last', fig.cap= "Annotated t-SNE plot (final gene/UMI cut-offs, post initial doublet filtering). bat: battery cell, db: doublet, ecEP: ectodermal epithelial cell, enEP: endodermal epithelial cell, fmgl: female germ-line, gc: gland cell, gmgc: granular mucous gland cell, i: cell of the interstitial lineage, id: integration doublet, mgl: male germline, mp: multiplet, nb: nematoblast, nc: neuronal cell, nem: nematocyte, pd: suspected phagocytosis doublet, prog: progenitor, SC: stem cell, smgc: spumous mucous gland cell, tent: tentacle, zmg: zymogen gland cell."}
+
+## Label clusters
+# Store cluster numbering
+ds.s1 <- StashIdent(object = ds.s1, save.name = "cluster_numbering")
+
+current.cluster.ids <- as.character(0:42)
+
+# Run this to restore original cluster numbering
+ds.s1 <- SetAllIdent(object = ds.s1, id = "cluster_numbering")
+
+cluster.names <- c("enEp_SC1","i_SC","ecEp_SC2","ecEp_SC3","enEp_SC2","i_nb1","enEp_SC3","enEp_head","ecEp_nem1(pd)","i_nc_prog","ecEp_head","enEp_foot","i_smgc2","i_nb2","ecEp_bat2(mp)","i_nc_gc_prog","i_gmgc","i_nem","i_zmg1","i_mgl","i_nb3","i_fmgl1","i_nc1","enEp_tent","i_fmgl2_nurse","i_nb4","ecEp_bd","ecEp_nem2(id)","i_nc2","i_nc3","i_nc4","i_nc5","i_nc6","enEp_nem1(pd)","i_smgc1","i_zmg2","i_nb4","ecEp_bat1(mp)","i_nc7","enEp_nem2(pd)","i_nc8","enEp_tent(pd)","db")
+
+# Update names in Seurat object
+ds.s1@ident <- plyr::mapvalues(x = ds.s1@ident, from = current.cluster.ids, to = cluster.names)
+
+# Store state labels
+ds.s1 <- StashIdent(object = ds.s1, save.name = "states")
+
+TSNEPlot(object = ds.s1, do.return=T, do.label = T, no.legend=TRUE, pt.size = 0.5)
+
+## Suspected doublet cluster db (68 cells) was excluded from from downstream analyses
+#ds.s1 <- SubsetData(object = ds.s1, ident.remove= c("db"), subset.raw = TRUE)
+
+```
+
+## Cluster annotation by cell lineage {-}
+
+We annotate the t-SNE representation by cell lineage (Fig. \ref{fig:tsnelineage}).
+
+```{r tsnelineage, fig.height = 9, fig.width = 9, out.height="40%", fig.align='center', fig.cap= "Annotated t-SNE plot colored by cell lineage."}
+
+# Restore original cluster numbering
+ds.s1 <- SetAllIdent(object = ds.s1, id = "cluster_numbering")
+
+cluster.names <- c("endoderm","interstitial","ectoderm","ectoderm","endoderm","interstitial","endoderm","endoderm","ectoderm","interstitial","ectoderm","endoderm","interstitial","interstitial","ectoderm","interstitial","interstitial","interstitial","interstitial","interstitial","interstitial","interstitial","interstitial","endoderm","interstitial","interstitial","ectoderm","ectoderm","interstitial","interstitial","interstitial","interstitial","interstitial","endoderm","interstitial","interstitial","interstitial","ectoderm","interstitial","endoderm","interstitial","endoderm","endoderm")
+
+# Update names in Seurat object
+ds.s1@ident <- plyr::mapvalues(x = ds.s1@ident, from = current.cluster.ids, to = cluster.names)
+
+# Store lineage labels
+ds.s1 <- StashIdent(object = ds.s1, save.name = "lineages")
+
+TSNEPlot(object = ds.s1, do.return=T, do.label = T, no.legend=TRUE, label.size = 8, pt.size = 0.5)
+
+```
+
+## Plot selected metagenes {-}
+
+NMF identifies sets of genes that are co-expressed (metagene, gene module) and outputs scores that indicate how strongly a metagene is expressed in a particular cell. We visualize these scores on the t-SNE representation (Fig. \ref{fig:metagenes}). We provide a supplementary file with the top 30 genes that characterize a metagene in the repository (nmf/wt_K96/GoodMeta_Top30.csv). NMF analysis wt_K96 was performed using cells in Seurat object Hydra_Seurat_Whole_Transcriptome.rds.\
+
+```{r loadmetagenes, results='hide', message=F, fig.keep='none'}
+
+# Load state labels
+ds.s1 <- SetAllIdent(object = ds.s1, id = "states")
+
+# Load metagene scores for each cell
+cellScores <- read.csv("nmf/wt_K96/GoodMeta_CellScores.csv", row.names = 1, check.names = F)
+cellScores <- as.data.frame(cellScores)
+# Make metagenes columns
+cellScores <-t(cellScores)
+# Fix cell ids
+rownames(cellScores) <- sub("X", "", rownames(cellScores))
+rownames(cellScores) <- sub("\\.", "-", rownames(cellScores))
+
+# Add scores
+cellScores.ds.s1 <- cellScores[match(rownames(ds.s1@meta.data),rownames(cellScores)),]  
+ds.s1@meta.data <- cbind(ds.s1@meta.data,cellScores.ds.s1)
+
+## Save object with metagene information
+#saveRDS(ds.ds,"objects/Hydra_Seurat_Whole_Transcriptome.rds")) 
+
+p1 <- TSNEPlot(object = ds.s1, do.label = T, label.size = 3, pt.size = 0.5, cex.names = 6, no.legend = TRUE, do.return = TRUE)
+p2 <- FeaturePlot(ds.s1, c("wt18", "wt11", "wt62", "wt2", "wt30", "wt82", "wt89", "wt76", "wt23", "wt13", "wt8", "wt45", "wt33", "wt75", "wt41", "wt31", "wt71", "wt70", "wt7", "wt25", "wt15", "wt22", "wt32", "wt66"), cols.use = c("grey", "blue"), do.return = TRUE)
+
+#generate plotlist
+plotlist <- prepend(p2, list(p1))
+
+```
+
+```{r metagenes, fig.height = 18, fig.width = 18, fig.cap= "Selected metagenes identified in NMF analysis for the whole dataset (wt_K96). A metagene describes a set of genes co-expressed in the highlighted cell population. A) Annotated t-SNE. B) Tentacle ectodermal epithelial cells. This metagene includes transcripts that are expressed in the epithelial cell of a battery cell complex since no expression is found in neuronal or nematocyte cell populations. C) Ectodermal epithelial cells, body column. D) Ectodermal epithelial cells, basal disk. E) Endodermal epithelial cells, body column. F) Endodermal epithelial cells, foot. G) Endodermal epithelial cells, tentacle. H) Endodermal epithelial cells, hypostome. I) Interstitial stem cells and early progenitors. J) Early stage nematoblast, singletons and phagocytosed. K) Mid stage nematoblast, singletons and phagocytosed. L,M) Late nematoblast, singletons and phagocytosed. N) Mature nematocyte, singletons and integrated. O) Nerve cell progenitors. P) Differentiated neurons. Q). Spumous mucous gland cells, hypostome. R) Spumous mucous gland cells, mid/lower head. S) Granular mucous gland cells, hypostome. T) Granular mucous gland cells, mid/lower head. U) Granular mucous gland cells/zymogen gland cells. V,W) Zymogen gland cells. X) Female germline cells. Y) Male germline cells."}
+
+# Plot metagenes
+plot_grid(plotlist= plotlist, labels="AUTO", label_size = 20, align = "h", ncol=5)
+
+```
+
+## Multiplet exploration {-}
+
+We use metagenes to further explore cells that express both epithelial and nematocyte genes and categories of these associations (Fig. \ref{fig:multiplet}). Whereas mature nematocytes can be mounted in epithelial cells this is not the case for nematoblasts which reside in interstitial spaces. Metagene co-expression analysis reveals doublet populations that include nematoblasts or mature nematocytes (Fig. \ref{fig:multiplet}).\
+
+```{r multiplet, fig.height = 20, fig.width = 12, message=F, warning=F, fig.keep='last', fig.align='center', out.height="75%", fig.cap= "Biological multiplets and suspected phagocytosis doublets. Co-expression analyses of selected markers/metagenes identify multiplet categories. A) Annotated t-SNE plot. B) Nematoblast gene nematogalectin B [@Hwang:2010hx] highlights metagene t45 as nematoblast metagene. C) Nematocilin A [@Hwang:2008gd] is expressed in mature nematocytes and highlights t33 as nematocyte metagene. Note expression in battery cell clusters. D,G) Metagene wt11 is expressed in ectodermal epithelial cells of the body column. E,K) Metagene wt45 is expressed in developing nematocytes (nematoblasts). F) Co-expression of metagenes wt11 and wt45 (red cells) - nematoblast/epithelial cell phagocytosis doublet. H,N) Metagene wt33 is expressed in mature nematocytes. I) Co-expression of metagenes wt11 and wt33 (red cells) - mature nematocyte/epithelial cell integration doublet. J,M) Metagene wt2 is expressed in endodermal epithelial cells of the body column. L) Co-expression of metagenes wt2 and wt45 (red cells) - nematoblast/epithelial cell phagocytosis doublet. O) Co-expression of metagenes wt2 and wt33 (red cells) - mature nematocyte/epithelial cell integration doublet."}
+
+## Suspected doublet cluster db (68 cells) was excluded from from downstream analyses
+ds.s1 <- SubsetData(object = ds.s1, ident.remove= c("db"), subset.raw = TRUE)
+
+# Plot highlighting nematoblast/epithelial cell, mature nematocyte/epithelial cell doublets
+
+p <- TSNEPlot(object = ds.s1, do.label = T, label.size = 4, pt.size=0.5, cex.names=6, no.legend = TRUE, do.return=TRUE)
+d1 <- FeaturePlot(object = ds.s1, features.plot = c("wt11","wt45"), cols.use = c("grey", "green", "blue", "red"), max.cutoff = 0.5, overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d2 <- FeaturePlot(object = ds.s1, features.plot = c("wt11","wt33"), cols.use = c("grey", "green", "blue", "red"), max.cutoff = 0.5, overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d3 <- FeaturePlot(object = ds.s1, features.plot = c("wt2","wt45"), cols.use = c("grey", "green", "blue", "red"), max.cutoff = 0.5, overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+d4 <- FeaturePlot(object = ds.s1, features.plot = c("wt2","wt33"), cols.use = c("grey", "green", "blue", "red"), max.cutoff = 0.5, overlay = TRUE, no.legend = TRUE, do.return=TRUE)
+
+# Plot with tsne
+p0 <- FeaturePlot(ds.s1, c("wt11","wt2"), cols.use=c("grey", "green"), do.return=TRUE, max.cutoff = 0.5)
+p1 <- FeaturePlot(ds.s1, c("wt45","wt33"), cols.use=c("grey", "blue"), do.return=TRUE, max.cutoff = 0.5)
+p2 <- FeaturePlot(ds.s1, c("nematogalectin B","nematocilin A"), cols.use=c("grey", "blue"), do.return=TRUE)
+
+plot_grid(p,p2[[1]],p2[[2]],p0[[1]],p1[[1]],d1[[1]],p0[[1]],p1[[2]],d2[[1]],p0[[2]],p1[[1]],d3[[1]],p0[[2]],p1[[2]],d4[[1]], labels="AUTO", label_size = 30, align = "h", ncol=3)
+
+```
+
+## Cells and UMIs across cell states {-}
+
+Considering all cells we find a median of `r median(ds.s1@meta.data$nGene)` genes and a median of `r median(ds.s1@meta.data$nUMI)` UMIs per cell. We calculate metrics for each cell state/cluster (Fig. \ref{fig:statestats}).\
+
+```{r statestats, message=F, fig.height = 20, fig.width = 4.5, out.height="80%", fig.align='center', fig.cap= "Median genes/UMIs per cell per state (all libraries)."}
+
+# Calculate gene/UMI metrics for states
+
+#load state labels
+ds.s1 <- SetAllIdent(object = ds.s1, id = "states")
+
+#calculate median gene and UMI numbers for all cluster
+mylist <- list()
+
+for (i in levels(ds.s1@ident)) {
+  vec <- numeric(3)
+  s <- SubsetData(object = ds.s1, ident.use=i)
+  vec[1] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[2] <- round(median(s@meta.data$nUMI), digits = 0)
+  vec[3] <- length(s@meta.data$nGene)
+  mylist[[i]] <- vec
+}
+df <- do.call("rbind",mylist) #combine all vectors into a matrix
+df <- as.data.frame(df)
+colnames(df) <- c("medianGene","medianUMI","cells")
+
+df<- df[order(df$medianGene),]
+df <- df[,c(3,1,2)]
+
+# Create table
+
+# Function to scale each column to the range [0, 1]
+norm <- function(x) {
+    apply(x, 2, function(y){(y-min(y))/(max(y)-min(y))})
+}
+
+bluecol <- colorRamp(c("red", "yellow", "green"))(norm(df))
+bluecol <- rgb(bluecol[, 1], bluecol[, 2], bluecol[, 3], max=255)
+
+tt <- ttheme_default(core=list(bg_params=list(fill=bluecol)))
+
+g <- tableGrob(df, theme=tt)
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 2, b = nrow(g), l = 1, r = ncol(g))
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 1, l = 1, r = ncol(g))
+grid.draw(g)
+
+```
+
+## Library stats {-}
+
+```{r libstats, fig.height = 20, fig.width = 4.5, out.height="30%", fig.align='center', fig.show='asis', fig.cap= "Cells, median genes/UMIs per cell per libraries. Cells with >300 <7k genes and >500UMI <50k UMIs."}
+
+# Calculate number of cells, median gene and UMI numbers for all libraries
+mylist <- list() #create an empty list
+
+for (i in levels(ds.s1@meta.data$orig.ident)) {
+  vec <- numeric(3) #preallocate a numeric vector
+  id <- rownames(ds.s1@meta.data)[ds.s1@meta.data[,"orig.ident"] == i]
+  s <- SubsetData(object = ds.s1, cells.use=id)
+  vec[1] <- length(s@meta.data$nGene)
+  vec[2] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[3] <- round(median(s@meta.data$nUMI), digits = 0)
+  mylist[[i]] <- vec #put all vectors in the list
+}
+df <- do.call("rbind",mylist) #combine all vectors into a matrix
+df <- as.data.frame(df)
+
+colnames(df) <- c("cells", "medianGene", "medianUMI")
+
+tt <- ttheme_default(core=list(fg_params=list(hjust=1, x=0.9)),
+                      rowhead=list(fg_params=list(hjust=1, x=0.95)))
+
+g <- tableGrob(df,theme=tt)
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 2, b = nrow(g), l = 1, r = ncol(g))
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 1, l = 1, r = ncol(g))
+grid.draw(g)
+
+```
+
+\pagebreak
+
+## Quality Metrics {-}
+
+Finally, we take a look at number of genes, UMIs and the contribution from each library (batch) (Figs. \ref{fig:tsnegenes}, \ref{fig:tsneUMIs}, \ref{fig:tsnebatch}).\
+
+```{r tsnegenes, fig.height = 9, fig.width = 9, out.height="50%", fig.align='center', fig.show='asis', fig.cap= "t-SNE plot. Number of genes."}
+
+#number of genes
+FeaturePlot(object = ds.s1, features.plot = "nGene", cols.use=c("grey", "green"))
+
+```
+
+```{r tsneUMIs, fig.height = 9, fig.width = 9, out.height="50%", fig.align='center', fig.show='asis', fig.cap= "t-SNE plot. Number of UMIs."}
+
+#number of umis
+FeaturePlot(object = ds.s1, features.plot = "nUMI", cols.use=c("grey", "red"))
+
+```
+
+```{r tsnebatch, fig.height = 9, fig.width = 9, out.height="50%", fig.align='center', fig.show='asis', fig.cap= "t-SNE plot. Cells by library."}
+
+#by batch
+TSNEPlot(object = ds.s1, group.by="orig.ident")
+
+```
+
+\pagebreak
+
+## Characterization of transgenic line nGreen {-}
+
+The transgenic line nGreen that was used in FACS shows mosaic GFP expression predominantly in the neuronal cell lineage caused by a random integration event after plasmid microinjection into the zygote. The expression is driven by the actin promoter, a promoter that is ubiquitously expressed in wild type *Hydra*. We extract cells from the neuronal libraries (12-)(Fig. \ref{fig:nGreen}) and use the cell state annotations to elucidate the composition of the GFP expressing population of cells (Fig. \ref{fig:ngreenstats}). 75.7% of the 3,218 cells that are retained after filtering are neuronal progenitors or differentiated neurons.\ 
+
+```{r nGreen, warning=F, message=F, fig.height = 6, fig.width = 12, out.height="70%", fig.align='center', fig.show='asis', fig.cap= "Cells from neuronal libraries 12-. A) Annotated t-SNE plot - whole data set. B) Annotated t-SNE plot - subset of cells from neuronal libaries 12-."}
+
+## Cell composition of neuronal libraries 12-
+
+p1 <- TSNEPlot(object = ds.s1, do.label = T, label.size = 3.5, pt.size=0.5, cex.names=6, no.legend = TRUE, do.return=TRUE)
+
+# Get ids for cells from FACS libraries
+n1 <- rownames(ds.s1@meta.data)[ds.s1@meta.data[,"orig.ident"] == "12-N1"]
+n2 <- rownames(ds.s1@meta.data)[ds.s1@meta.data[,"orig.ident"] == "12-N2"]
+
+facs <- c(n1,n2)
+
+ds.fa <- SubsetData(object = ds.s1, cells.use=facs, subset.raw=TRUE)
+p2 <- TSNEPlot(object = ds.fa, do.label = T, label.size = 3.5, pt.size=0.5, cex.names=6, no.legend = TRUE, do.return=TRUE)
+
+plot_grid(p1, p2, labels="AUTO", label_size = 30, align = "h", ncol=2)
+
+```
+
+\pagebreak
+
+```{r ngreenstats, warning=F, message=F, fig.height = 20, fig.width = 4.5, out.height="70%", fig.align='center', fig.show='asis', fig.cap= "Composition of transgenic cell population from strain nGreen used in FACS."}
+
+#calculate median gene and UMI numbers for all cluster
+mylist <- list() #create an empty list
+
+for (i in levels(ds.fa@ident)) {
+  vec <- numeric(3) #preallocate a numeric vector
+  #\vec[1] <- as.numeric(i)
+  s <- SubsetData(object = ds.fa, ident.use=i)
+  vec[1] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[2] <- round(median(s@meta.data$nUMI), digits = 0)
+  vec[3] <- length(s@meta.data$nGene)
+  mylist[[i]] <- vec #put all vectors in the list
+}
+df <- do.call("rbind",mylist) #combine all vectors into a matrix
+df <- as.data.frame(df)
+colnames(df) <- c("medianGene","medianUMI","cells")
+
+df<- df[order(-df$cells),]
+df <- df[,c(3,1,2)]
+
+tt <- ttheme_default(core=list(fg_params=list(hjust=1, x=0.9)),
+                      rowhead=list(fg_params=list(hjust=1, x=0.95)))
+
+g <- tableGrob(df,theme=tt)
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 2, b = nrow(g), l = 1, r = ncol(g))
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 1, l = 1, r = ncol(g))
+grid.draw(g)
+
+```
+
+\pagebreak
+
+### Software versions {-}
+
+This document was computed on `r format( Sys.time(), "%a %b %d %X %Y" )` with the following R package versions.\
+
+```{r session_summary, echo=FALSE, include=TRUE, comment=NA}
+	sessionInfo()
+```
+
+## References {-}

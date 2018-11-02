@@ -1,0 +1,737 @@
+---
+title: "SA01 - Initial clustering, gene/UMI cut-off decision"
+author: "Stefan Siebert"
+date: "October 25, 2018"
+bibliography: SA.bib
+csl: bib.csl
+site: "bookdown::bookdown_site"
+output:
+  bookdown::pdf_document2:
+    toc: FALSE
+linestretch: 0.5
+fontsize: 11 pt
+geometry: margin= 2.0 cm
+---
+
+\fontsize{10}{18}
+
+```{r knit_prep, echo=F, results='hide', message=F, warning=F}
+
+library("knitr")
+opts_chunk$set(tidy.opts=list(width.cutoff=70),tidy=TRUE,dev="png",dpi=150)
+
+```
+
+## Summary {-}
+
+We set out to elucidate cell state specific gene and UMI metrics to make an informed decision on suitable gene and UMI cut-offs for the final data set. Drop-seq reads from 15 libaries were mapped to a de novo transcriptome reference for *Hydra vulgaris* AEP. After an initial permissive cell QC (genes per cell cut-offs of > 200 and < 8k and UMIs per cell cut-offs of > 400 < 70k) we perform graph-based clustering of the cells using Seurat [@Satija:2015iq]. Clusters are annotated using published gene expression patterns. Metrics for cell states are calculated and further explored.\  
+
+# Preliminaries {-}
+
+```{r preliminaries, include=TRUE, message=F, warning=F}
+
+library(Seurat)
+library(dplyr)
+library(Matrix)
+library(gtable)
+library(grid)
+library(gridExtra)
+library(rlang)
+
+# Function to find the full ID for gene of interest
+# Gene ids have are of the format txxxaep|swiss_prot_id_best_hit
+hFind <- function (x) {
+  return (ds.ds@data@Dimnames[[1]][grep(x,ds.ds@data@Dimnames[[1]],ignore.case = T)])
+}
+
+# We assume a folder "objects" in the markdown directory that contains our raw count object and all Seurat objects
+
+```
+
+## Load filtered data {-}
+
+We load `GSE121617_Hydra_DS_transcriptome_UMICounts.txt`, which is a *genes X cell* data.frame of unnormalized, unlogged transcripts detected per gene per cell.\
+
+```{r load data}
+
+# Load UMI counts
+ds.counts <- read.table("objects/GSE121617_Hydra_DS_transcriptome_UMICounts.txt", sep="\t", check.names = FALSE, header = TRUE)
+ds.counts <- as.matrix(ds.counts)
+ds.counts <- as(ds.counts, "sparseMatrix")
+
+```
+
+## Create Seurat object {-}
+
+```{r create Seurat}
+
+# Keep all genes expressed in >= 3 cells, keep all cells with >= 200 genes
+ds.ds <- CreateSeuratObject(raw.data=ds.counts, min.cells=3, min.genes=200, project="Hydra")
+
+# Delete original data
+rm(ds.counts)
+
+```
+
+## Basic QC {-}
+
+The two *Hydra* mitochondrial genomes were added to the transcriptome reference after removal of mitochondrial transcripts. This allows for calculating percentage of mitochondrial reads for each cell.\
+
+```{r mitochondrial genes}
+
+# Calculate percentage of mitochondrial reads per cell
+mito.genes <- grep(pattern = "^MT_", x = rownames(x = ds.ds@data), value = TRUE)
+percent.mito <- Matrix::colSums(ds.ds@raw.data[mito.genes, ]) / Matrix::colSums(ds.ds@raw.data)*100
+
+# Add percent.mito column to object@data.info
+ds.ds <- AddMetaData(ds.ds, percent.mito, "percent.mito")
+
+```
+
+We evaluate genes/cell, UMIs/cell and percentage of mitochondrial reads across treatments (Fig. \ref{fig:qcstats}). Two different types of beads were used in the experiments. Libraries 01-06 were generated using original Drop-seq beads (Barcoded Beads SeqB; ChemGenes Corp., Wilmington, MA, USA) [@Macosko:2015ht]). Libraries 11-12 were generated using R&D beads (LGC Biosearch Technologies,  Petaluma, CA, USA) that had a 12bp UMI as the only modification to the linker. A longer sequencing read 1 yielded improved sequence quality scores on the Illumina NextSeq. Biosearch beads however generated lower gene and UMI numbers per cell for comparable cell suspensions (Figs. \ref{fig:qcstats}, \ref{fig:mito}), e.g. libraries 06-KI and 11-PO were both created using suspensions from whole *Hydra*. The highest percentages of mitochondrial reads were observed in FACS sorted neuronal libraries 12-N1 and 12-N2  (Figs. \ref{fig:qcstats}, \ref{fig:mito}).\
+
+```{r qcstats, fig.height = 8, fig.width = 12, fig.align='center', out.height="40%", fig.cap= "Number of genes, UMIs and percentage of mitochondrial reads per cell across libraries."}
+
+# Fig. qcstats
+VlnPlot(object = ds.ds, c("nGene", "nUMI","percent.mito"), group.by = "orig.ident", nCol = 2, x.lab.rot = TRUE, point.size.use = 0.2)
+
+```
+
+High levels of mitochondrial reads may indicate that a cell was stressed or dying. We exclude cells that have > 5% of mitochondrial reads and calculate post filtering stats for cells from individual libraries (Fig. \ref{fig:mito}).\
+
+```{r mito, fig.height = 20, fig.width = 20, out.height="30%", fig.align='center', fig.cap= "Percentage of cells with high mitochondrial read ratios across libraries. Cell numbers pre and post filtering. Fraction of mitochondrial reads. Median genes and UMIs per cell post filtering using permissive gene and UMI cut-offs."}
+
+# Calculate library stats
+
+mylist <- list() #create an empty list
+
+# Calculate library stats
+for (i in levels(ds.ds@meta.data$orig.ident)){
+  vec <- numeric(3)
+  s <- SubsetData(object = ds.ds, ident.use = i)
+  all <- length(s@meta.data$nGene)
+  vec[1] <- as.numeric(length(s@meta.data$nGene))
+  s <- FilterCells(object = s, subset.names = c("percent.mito"), 
+    low.thresholds = c(-Inf), high.thresholds = c(0.05))
+  vec[3] <- length(s@meta.data$nGene)
+  low_mito <- length(s@meta.data$nGene)
+  percent <- (all - low_mito)/all*100
+  vec[2] <- round (percent, digits = 2)
+  vec[4] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[5] <- round(median(s@meta.data$nUMI), digits = 0)
+  mylist[[i]] <- vec
+}
+
+df <- do.call("rbind",mylist) #combine all vectors into a matrix
+df <- as.data.frame(df)
+colnames(df) <- c("cell# (pre)","% high mito","cell# (post)","genes (post)","UMIs (post)")
+
+tt <- ttheme_default(core=list(fg_params=list(hjust=1, x=0.9)),
+                      rowhead=list(fg_params=list(hjust=1, x=0.95)))
+
+g <- tableGrob(df,theme=tt)
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 2, b = nrow(g), l = 1, r = ncol(g))
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 1, l = 1, r = ncol(g))
+
+grid.draw(g)
+
+```
+
+```{r filter mito}
+
+# Exclude cells with high percentage of mitochondrial reads
+ds.ds <- FilterCells(object = ds.ds, subset.names = c("percent.mito"), low.thresholds = c(-Inf) , high.thresholds = c(0.05))
+
+```
+
+## Pre-clustering workflow {-}
+
+We use Seurat to normalize and scale the data and to identify genes that vary more than expected for their expression level (Fig. \ref{fig:vargenes}).\
+
+```{r normalize, cache.lazy = FALSE, cache=TRUE, results='hide'}
+
+# Normalize
+ds.ds <- NormalizeData(object = ds.ds, normalization.method = "LogNormalize", scale.factor = 10000)
+
+```
+
+```{r vargenes, cache.lazy = FALSE, cache=TRUE, results='hide', fig.height = 5, fig.width = 5, out.height="30%", fig.align='center', fig.cap= "Variable genes using a dispersion cut-off of 0.5 and an expression cut-off of 0.05."}
+
+# Fig. vargenes, identify highly variable genes
+ds.ds <- FindVariableGenes(object = ds.ds, 
+    mean.function = ExpMean, dispersion.function = LogVMR, 
+    x.low.cutoff = 0.05, x.high.cutoff = 4, y.cutoff = 0.5)
+
+```
+
+```{r scale, cache.lazy = FALSE, cache=TRUE, results='hide'}
+
+# Scale
+ds.ds <- ScaleData(object = ds.ds)
+
+```
+
+## Perform linear dimensional reduction {-}
+
+In preparation for graph-based clustering we perform PCA on the scaled data using genes in object@var.genes. `r length(ds.ds@var.genes)` genes are identified as variable given the selected cut-offs for dispersion and expression level.\
+
+```{r pca, results='hide'}
+
+# PCA on highly variable genes
+ds.ds <- RunPCA(object = ds.ds, pc.genes = ds.ds@var.genes, pcs.compute = 40, do.print = TRUE, pcs.print = 1:5)
+
+```
+
+We score each gene in the dataset (including genes not included in the PCA) based on their correlation with the calculated components.\
+
+```{r project pca, results='hide'}
+
+# Project PCA
+ds.ds <- ProjectPCA(object = ds.ds)
+
+```
+
+## Determine PCs to be included in downstream analyses {-}
+
+We perform the Jackstraw test as implemented in Seurat to identify "significant" principal components to be used in the cell clustering. In addition, we approximate the amount of variance encoded by each PC using the the function PCELbowPlot() (Fig. \ref{fig:pcelbow}).\  
+
+```{r jack straw, eval = FALSE}
+
+# Determine statistically significant PCs
+ds.ds <- JackStraw(object = ds.ds, num.pc = 40, num.replicate = 100, do.print = FALSE)
+JackStrawPlot(object = ds.ds, PCs=1:40)
+
+```
+
+```{r pcelbow, fig.height = 4, fig.width = 4, out.height="20%", fig.align='center', fig.cap= "Plot of the standard deviations of the principle components."}
+
+# Fig., approximate amount of variance encoded by each PC
+# Look at a plot of the standard deviations of the principle components and draw cut-off where there is a clear elbow in the graph
+PCElbowPlot(object = ds.ds, num.pc = 40)
+
+```
+
+## Community detection clustering {-}
+
+At this stage we cluster the cells to obtain broad insights into the captured cell states. We consider PCs 1:19 in this initial cell clustering which results in cell lineage separation and biologically meaningful clustering results. The JackStraw test finds > 40 PCs to be statistically significant. Considering a higher number of principal components reveals additional variability within cell populations including batch effects which we evaluate in detail further downstream.\
+
+```{r find cluster, cache=TRUE, cache.lazy = FALSE}
+
+# Find cluster
+ds.ds <- FindClusters(object = ds.ds, reduction.type = "pca", dims.use = 1:19, force.recalc = TRUE, resolution = 1.5, print.output = 0)
+
+```
+
+## t-SNE embedding {-}
+
+We apply t-SNE dimensionality reduction for visualization purposes. `r length(unique(ds.ds@meta.data$res.1.5))` clusters are recovered in our original analysis using a resolution parameter of 1.5 (Fig. \ref{fig:tsne}). t-SNE dimensionality reduction is not deterministic and resulting plots will differ.\
+
+```{r run tsne, cache.lazy = FALSE, cache=TRUE}
+
+# Run t-SNE
+ds.ds <- RunTSNE(object = ds.ds, dims.use = c(1:19), do.fast = T)
+
+# Save object
+ saveRDS("objects/ds.ds.g200_8k_U400_70k_PC1_19.rds")
+
+```
+
+```{r tsne, message=F, warning=F, fig.height = 9, fig.width = 9, out.height="50%", fig.align='center', fig.cap= "t-SNE plot for all cells after applying permissive gene and UMI cut-offs."}
+
+# Since t-SNE is not deterministic we here load the object of our original analysis
+#ds.ds <- readRDS("objects/ds.ds.g200_8k_U400_70k_PC1_19.rds")
+
+# Fig. tsne
+TSNEPlot(object = ds.ds, group.by="res.1.5", do.return=T, do.label = T, no.legend = TRUE, pt.size = 0.5) + ggtitle("Resolution 1.5")
+
+```
+
+\pagebreak
+
+## Cluster annotation {-}
+
+We use selected markers to get insights into cluster identity and visualize expression on the t-SNE representation (Fig. \ref{fig:annotate}). We label the cluster according to the reported expression domain of the selected marker. Multiple markers were used to refine the annotation (Fig. \ref{fig:annotatedtsne}). Only a selection of markers is presented here.\
+
+```{r annotate tsne genes, results='hide', message=F, fig.keep='none'}
+
+# Annotate t-SNE
+# Selected genes used for annotation
+gene.names <- c(hFind("t31074aep"),hFind("t14194aep"),hFind("t25396aep"),hFind("t16043aep"),hFind("t4498aep"),hFind("t16456aep"),hFind("t11407aep"),hFind("t3974aep"),hFind("t8678aep"),hFind("t12596aep"),hFind("t7059aep"),hFind("t13480aep"),hFind("t23176aep"),hFind("t11117aep"),hFind("t11585aep"))
+
+# Update gene names
+new.names <- c("arminin1a","HyWnt3","CnNK-2","PPOD1","ks1","HyAlx","Cnnos1","ELAV2 (t3974)","HyDkk1/2/4 A","HyTSR1","MUC2 (t7059)","nematogalectin B","nematocilin A","periculin1a","H2BL1 (t11585)")
+
+# Function to annotate/rename genes
+update.names <- function(gene.names, new.names) {
+  for (i in 1:length(gene.names)) {
+    rownames(ds.ds@data)[which(rownames(ds.ds@data) == gene.names[i])] <<- new.names[i]
+  }
+}
+
+# Annotate
+update.names(gene.names, new.names)
+
+# Plot with tsne
+p1 <- TSNEPlot(object = ds.ds, group.by="res.1.5", do.label = T, label.size = 5, pt.size=0.5, cex.names=6, no.legend = TRUE, do.return=TRUE)
+p2 <- FeaturePlot(ds.ds, c("arminin1a","HyWnt3","CnNK-2","PPOD1","ks1","HyAlx","Cnnos1","ELAV2 (t3974)","HyDkk1/2/4 A","HyTSR1","MUC2 (t7059)","nematogalectin B","nematocilin A","periculin1a","H2BL1 (t11585)"), cols.use=c("grey", "blue"), do.return=TRUE)
+
+plotlist <- prepend(p2, list(p1))
+
+```
+
+```{r annotate, fig.height = 18, fig.width = 18, fig.cap= "Selected markers used for cluster annotation. A) t-SNE plot for permissive data set. B) endoderm - *arminin1a* [@Augustin:2009kg]. C) endoderm/ectoderm hypostome - *Wnt3* [@Hobmayer:2000gj]. D) endoderm foot/peduncle - *CnNK-2* [@Grens:1996eo]. E) ectoderm/endoderm - *PPOD1* [@Thomsen:2006ia]. F) ectoderm head - *ks1* [@Endl:1999wt]. G) ectoderm tentacle - *HyAlx* [@Smith:2000ti]. H) multipotent i-cells/progenitors/male and female germline - *Cnnos1* [@Mochizuki:2000wu]. I) neuron progenitor/neurons - *ELAV2* (t3974, this study). J) zymogen gland cell - *HyDkk1/2/4-A* [@Augustin:2006bb; @Guder:2006gg]. K) mucous gland cells - *HyTSR1* [@Siebert:2008kf]. L) mucous gland cell - *MUC2* (t7059). M) nematogenesis/doublets - *nematogalectin B* [@Hwang:2010hx]. N) differentiated nematocytes/battery cell - *nematocillin A* [@Hwang:2008gd]. O) female germline - *periculin1a* [@Fraune:2010hh]. P) male germline - histone *H2BL1* (t11585, this study)."}
+
+plot_grid(plotlist= plotlist, labels="AUTO", label_size = 20, align = "h", ncol=4)
+
+```
+
+```{r annotate_tsne_identity}
+
+# Annotate clusters
+# Store cluster numbering
+ds.ds <- StashIdent(object = ds.ds, save.name = "cluster_numbering")
+ds.ds <- SetAllIdent(ds.ds, "res.1.5")
+
+current.cluster.ids <- as.character(0:43)
+
+# Run this to restore original cluster numbering
+ds.ds <- SetAllIdent(object = ds.ds, id = "cluster_numbering")
+
+# Cluster identities
+cluster.names <- c("enEp_SC1","i_SC","enEp_SC2","ecEp_SC1","i_gc_nc_prog","ecEp_SC2","i_nb1","i_smgc","ecEp_nem1(pg)","enEp_foot","ecEp_head","i_gmgc","i_nb2","ecEp_bat(mp)","ecEp_bd","i_nc1","i_nem","i_zmg1","i_nc2","i_fmgl1","ecEp_nem2(id)","i_mgl","i_fmgl2","i_nc3","enEp_head","enEp_SC3","i_nb3","i_nb5","enEp_tent","i_nc4","i_nc5","i_nc6","i_nb4","db3","enEp_nem1(pd)","i_nc7","enEp_nem2(pd)","i_zmg2","i_nc8","enEp_tent(pd)","db1","i_gc_prog","ecEp_nem3(pg)","db2")
+
+# Update names in Seurat object
+ds.ds@ident <- plyr::mapvalues(x = ds.ds@ident, from = current.cluster.ids, to = cluster.names)
+
+```
+
+```{r annotatedtsne, fig.height = 9, fig.width = 9, out.height="70%", fig.align='center', fig.cap= "Annotated t-SNE plot for the permissive dataset. bat: battery cell, db: doublet, ecEP: ectodermal epithelial cell, enEP: endodermal epithelial cell, fmgl: female germ-line, gc: gland cell, gmgc: granular mucous gland cell, i: cell of the interstitial lineage, id: integration doublet, mgl: male germline, mp: multiplet, nb: nematoblast, nc: neuronal cell, nem: nematocyte, pd: suspected phagocytosis doublet, prog: progenitor, SC: stem cell, smgc: spumous mucous gland cell, tent: tentacle, zmg: zymogen gland cell."}
+
+# Fig. annotated tsne
+TSNEPlot(object = ds.ds, do.return=T, do.label = T, no.legend=TRUE, pt.size = 0.5) + ggtitle("g>200<8k genes, UMI>400<70k,  27,911 cells")
+
+```
+
+\pagebreak
+
+## Cluster annotation identifies biological multiplets {-}
+
+*Hydra* has a specialized cell that is localized in the ectoderm of the tentacles - the battery cell [@Campbell:1987en; @Hobmayer:1990wc] (Fig. \@ref(doublets)). This epithelial cell houses multiple nematocytes and a neuron [@Campbell:1987en; @Hobmayer:1990wc] (Fig. \@ref(doublets) D,G). Our dissociation strategy does not allow for separation of the host cell and the mounted cells and this type of association shows as a hybrid transcriptome in the data. Cells in clusters composed of battery cell multiplets are positive for epithelial, nematocyte and neuronal markers, and are labeled (mp) in the annotated t-SNE plot. In addition, mature nematocytes can be found mounted or integrated in ectodermal epithelial cells along the body column and neurons have also been found integrated within ectodermal cells outside the tentacles [@Bode:1976wx; @Dubel:1989ii]. We refer to a physical association of a neuron/nematocyte and an epithelial cell outside the tentacles that naturally occurs in homeostatic *Hydra* as integration doublet (id).
+
+We find unexpected colocalization of nematocyte gene expression with endodermal epithelial gene expression, e.g. cells of cluster 36 (enEP_nem2(pd)) show expression for both endodermal markers and the nematoblast marker *nematogalectin B* (Fig. \ref{fig:annotate} M). Except for a single publication [@Lyon:1982fa], endodermal localization of nematocytes has not been established in *Hydra*. We attribute these doublet transcriptional signatures, in part, to phagocytotic activity of epithelial cells. Phagocytotic activity of epithelial cells has been reported on multiple occasions [@Campbell:1976vx; @Lyon:1982fa]. Phagocytosis may occur across the mesoglea via phagocytotic processes even in homeostatic *Hydra* and evidence is observable as cellular remains inside unbroken epithelial cells separated by maceration in wild type *Hydra* [@Campbell:1976vx]. Using transgenic lines expressing GFP in specific interstitial cell populations we are able to find evidence in support for the hypothesis that neighbouring cells get taken up during the dissociation procedure (Fig. \@ref(doublets) A). Phagocytotic uptake occurs within 5 to 30min post challenge and thus likely occurs before the animals are fully dissociated [@McNeil:1981tz]. The uptake is not restricted to entire cells but also includes blebs that pinch off from epithelial cells during dissociation; we demonstrated this by using using cells that express cytosolic fluorescent proteins (not shown). This could potentially lead to spurious expression of marker genes from different lineages in epithelial cells of the ectoderm or endoderm. Phagocytotic uptake of cells or blebs has also been demonstrated in reaggregation experiments [@Seybold:2016fs]. We interpret co-expression of nematoblast/nematocyte markers and endodermal markers in part as a result of these processes. This doublet type is labeled as suspected phagocytosis doublet (pd) in the annotated t-SNE plot. Phagocytotic uptake of nematoblasts by epithelial cells is obvious in the t-SNE representation (Fig. \ref{fig:tsne}). Cluster i_nb5 are late stage nematoblasts. The terminus of this trajectory is formed by cells positive for *PPOD1* expression, an epithelial marker (compare to Fig. \ref{fig:annotate} E), suggesting that the terminal group of cells in this trajectory represent doublets composed of nematoblasts and ectodermal epithelial cells. A clear distinction between the mp, id and pd categories is in many cases not possible. 
+
+![\label{doublets}Documentation of live cells after tissue dissociation reveals cell multiplets. Multiple transgenic strains expressing fluorescent proteins were used to demonstrate the existence of biological multiplets (e.g. battery cells), viability of cells within the host cells, and the occurrence of phagocytosis. For all panels: 1st image fluorescence, 2nd image bright field, 3rd image overlay. A-C,F) Line expressing GFP in ectodermal epithelial cells and RFP in endodermal epithelial cells. D,G) Line (eGreen) expressing GFP predominantly in the neuronal lineage and scattered in nematocytes. H,I) Cross of lines neuro::GFP and eGreen expressing GFP in ectodermal neurons and RFP in epithelial cells (Lines courtesy of Rob Steele, Toshitaka Fujisawa, Xiaoming Zhang and Yukihiko Noro). A-D) Ectodermal epithelial cells containing a single or multiple nematocytes of one or multiple kinds. A) Ectodermal epithelial cell containing multiple nematocytes with desmonemes. The nematocytes appear to be contained in a vacuole like compartment that may be indicative of phagocytotic uptake in the course of the dissociation procedure. B) Ectodermal epithelial cell containing two nematocytes with desmonemes. C) Ectodermal epithelial cell containing a single nematocyte with isorhiza nematocyst. D) Nematocyte with stenotele and GFP positive cytoplasm within an ectodermal epithelial battery cell. F) Endodermal epithelial cell containing a stenotele. G) Ectodermal epithelial battery cell containing a GFP positive neuron. H) Endodermal epithelial cell (as indicated by the presence of vacuoles) containing GFP, with transgenic neurons as the sole possible source for GFP. I) Ectodermal epithelial cell containing a nematocyte (stenotele) and GFP positive structures, with transgenic neurons as as the sole possible source for GFP. d: desmoneme, is: isorhiza, st: stenotele, nc: neuronal cell.](SA_figures/SA01_figures/multiplets_doublets.jpg)
+
+Neuronal multiplets and doublets resulting from integration or phagocytotic uptake could be demonstrated in fluorescence-activated sorted cell (FACS) populations (Fig. \@ref(neurodoublets)). The line (eGreen) used for this experiment expresses GFP (act::GFP) predominantly in the neuronal trajectory and mature neurons as a result of a random integration event after zygote microinjection. Using FACS, we were able to collect both single neuronal cells (Fig. \@ref(neurodoublets) B) and larger GFP-positive cells that we determined to be multiplets composed of GFP-positive cells residing within epithelial cells (Fig. \@ref(neurodoublets) C). Ectodermal cells of the body column or endodermal cells are suggested as host cells in cases were co-integrated nematocytes are absent (see also (Fig. \@ref(doublets) H, I).
+The presence of multiple biological doublet categories as well as technical doublets (e.g. dissociation doublets and expected drop-seq doublets) imposes analysis challenges. We therefore did not perform global doublet exclusion at an early stage but rather evaluated doublets at each stage of the downstream analyses and applied strategies to appropriately deal with these challenges.
+
+![\label{neurodoublets}Pilot fluorescence-activated cell sorting (FACS) of *Hydra* cell suspensions. A) Gates implemented to collected GFP-positive cells. Both populations, R1 and R2, are GFP-positive. Population R2 (B) contained undifferentiated cells, neurons (bottom, to be labeled), and scattered nematocytes. Cells of population R2 were collected in two independent sortings and used to generate two Drop-seq libraries. C) Population R1 was characterized by lower GFP intensities and larger cell sizes. Fluorescent microscopy combined with DIC (C) revealed GFP signal within larger epithelial cells demonstrating the existence of biological multiplets likely due to integrated neurons or phagocytosis. These cell multiplets are captured when performing whole animal cell suspensions.](SA_figures/SA01_figures/neurodoublets.jpg)
+
+## Cells and UMIs across cell states, bead evaluation {-}
+
+We determine gene and UMI metrics for each annotated cell state in this initial clustering. The overall statistics are summarized in Fig. \ref{fig:tab1}. The lowest gene and UMI numbers are observed for differentiated neurons. Cells that were identified as female germline (nurse cells) have the highest gene and UMI numbers. Zymogen gland cells (i_zmg1, i_zmg2) stand out as cells with relatively high UMI to gene ratios (Fig. \ref{fig:tab1}).  
+
+Since choice of beads affected the cell metrics, we break down the metrics by beads (Fig. \ref{fig:tab2}). We compare metrics for cells generated with ChemGenes beads (CG, 11 libraries, whole animal dissociations) to all cells that were generated using Biosearch beads (BS, 4 libraries). We further break down Biosearch beads into cells that were generated from whole animal dissociations (wBS, 2 libraries, to be compared to ChemGenes bead metrics) and cells that were enriched for neuronal cells using FACS (nBS, 2 libraries). Both bead types generate similar distributions of gene and UMI numbers across cell states with fewer genes and UMIs detected in case of Biosearch beads.\ 
+
+```{r cluster_stats_all, message=F, warning=F}
+
+# Calculate median gene and UMI numbers for all cluster
+mylist <- list() #create an empty list
+
+for (i in levels(ds.ds@ident)) {
+  vec <- numeric(3) #preallocate a numeric vector
+  #vec[1] <- as.numeric(i)
+  s <- SubsetData(object = ds.ds, ident.use=i)
+  vec[1] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[2] <- round(median(s@meta.data$nUMI), digits = 0)
+  vec[3] <- length(s@meta.data$nGene)
+  mylist[[i]] <- vec #put all vectors in the list
+}
+df <- do.call("rbind",mylist) #combine all vectors into a matrix
+df <- as.data.frame(df)
+colnames(df) <- c("medianGene","medianUMI","cells")
+
+df<- df[order(df$medianGene),]
+df <- df[,c(3,1,2)]
+
+```
+
+```{r tab1, fig.height = 20, fig.width = 4.5, out.height="80%", fig.align='center', fig.cap= "Median genes/UMIs per cell per state (all libraries)."}
+
+# Table genes/UMIs, create table for median gene and UMI numbers for all states for cells from all libraries
+
+# https://stackoverflow.com/questions/44141060/how-to-formatting-numbers-by-column-in-a-table-tablegrob
+# Function to scale each column to the range
+norm <- function(x) {
+    apply(x, 2, function(y){(y-min(y))/(max(y)-min(y))})
+}
+
+bluecol <- colorRamp(c("red", "yellow", "green"))(norm(df))
+bluecol <- rgb(bluecol[, 1], bluecol[, 2], bluecol[, 3], max=255)
+
+tt <- ttheme_default(core=list(bg_params=list(fill=bluecol)))
+
+g <- tableGrob(df, theme=tt)
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 2, b = nrow(g), l = 1, r = ncol(g))
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 1, l = 1, r = ncol(g))
+grid.draw(g)
+
+```
+
+```{r cgBS, cache = TRUE, message=F, warning=F}
+
+# Calculate median gene and UMI numbers for all clusters by bead type
+
+# Get library ids
+#> levels(ds.ds@meta.data$orig.ident)
+# [1] "01-D1" "01-P2" "02-CO" "02-P1" "02-PB" "03-FM" "03-KI" "03-MA" "06-FM" "06-KI" "06-MA" "11-BU" "11-PO" "12-N1" "12-N2"
+
+# Get cells from ChemGenes libraries
+S1 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "01-D1"]
+S2 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "01-P2"]
+S3 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "02-CO"]
+S4 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "02-P1"]
+S5 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "02-PB"]
+S6 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "03-FM"]
+S7 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "03-KI"]
+S8 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "03-MA"]
+S9 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "06-FM"]
+S10 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "06-KI"]
+S11 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "06-MA"]
+
+# Combine cells from ChemGenes libraries 
+chem <- c(S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,S11)
+
+# Calculate median gene and UMI numbers per cluster for cells from ChemGenes libraries 
+mylist <- list()
+
+for (i in levels(ds.ds@ident)) {
+  vec <- numeric(3) 
+  s <- SubsetData(object = ds.ds, ident.use=i)
+  s <- SubsetData(object = s, cells.use = chem)
+  vec[1] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[2] <- round(median(s@meta.data$nUMI), digits = 0)
+  vec[3] <- length(s@meta.data$nGene)
+  mylist[[i]] <- vec
+}
+cg <- do.call("rbind",mylist)
+cg <- as.data.frame(cg)
+
+colnames(cg) <- c("CGmedGene","CGmedUMI","CGcells")
+cg$cellState <- rownames(cg)
+cg <- cg[,c(4,3,1,2)]
+
+# Get cells from Biosearch libraries
+S12 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "11-BU"]
+S13 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "11-PO"]
+S14 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "12-N1"]
+S15 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "12-N2"]
+
+# Combine cells from Biosearch libraries
+bio <- c(S12,S13,S14,S15)
+
+# Calculate median gene and UMI numbers per cluster for cells from Biosearch libraries
+mylist <- list()
+
+for (i in levels(ds.ds@ident)) {
+  vec <- numeric(3) 
+  s <- SubsetData(object = ds.ds, ident.use=i)
+  s <- SubsetData(object = s, cells.use = bio)
+  vec[1] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[2] <- round(median(s@meta.data$nUMI), digits = 0)
+  vec[3] <- length(s@meta.data$nGene)
+  mylist[[i]] <- vec
+}
+
+BS <- do.call("rbind",mylist)
+BS <- as.data.frame(BS)
+
+colnames(BS) <- c("BSmedGene","BSmedUMI","BScells")
+BS$cellState <- rownames(BS)
+BS <- BS[,c(4,3,1,2)]
+
+cgBS <- merge(cg,BS, by="cellState")
+cgBS <- cgBS[order(cgBS$CGmedGene),]
+cgBS[is.na(cgBS)] <- 0
+
+rownames(cgBS) <- cgBS$cellState
+cgBS$cellState <- NULL
+
+```
+
+```{r wBS, cache = TRUE, message=F, warning=F}
+
+# Get cells from Biosearch libraries 11-, these were whole animal dissociations
+bio <- c(S12,S13)
+
+# Calculate median gene and UMI numbers per cluster for cells from Biosearch libraries 11-
+mylist <- list() #create an empty list
+
+for (i in levels(ds.ds@ident)) {
+  vec <- numeric(3)
+  s <- SubsetData(object = ds.ds, ident.use=i)
+  s <- SubsetData(object = s, cells.use = bio)
+  vec[1] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[2] <- round(median(s@meta.data$nUMI), digits = 0)
+  vec[3] <- length(s@meta.data$nGene)
+  mylist[[i]] <- vec
+}
+
+wBS <- do.call("rbind",mylist)
+wBS <- as.data.frame(wBS)
+
+colnames(wBS) <- c("wBSmedGene","wBSmedUMI","wBScells")
+wBS$cellState <- rownames(wBS)
+wBS <- wBS[,c(4,3,1,2)]
+
+cgwBS <- merge(cg,wBS, by="cellState")
+cgwBS <- cgwBS[order(cgwBS$CGmedGene),]
+cgwBS[is.na(cgwBS)] <- 0
+
+rownames(cgwBS) <- cgwBS$cellState
+cgwBS$cellState <- NULL
+
+```
+
+```{r nBS, cache = TRUE, message=F, warning=F}
+
+#get cells from Biosearch libraries 12-, these were FACS sorted libraries
+bio <- c(S14,S15)
+
+#calculate median gene and UMI numbers per cluster for cells from Biosearch libraries 12-
+mylist <- list()
+
+for (i in levels(ds.ds@ident)) {
+  vec <- numeric(3)
+  s <- SubsetData(object = ds.ds, ident.use=i)
+  s <- SubsetData(object = s, cells.use = bio)
+  vec[1] <- round(median(s@meta.data$nGene), digits = 0)
+  vec[2] <- round(median(s@meta.data$nUMI), digits = 0)
+  vec[3] <- length(s@meta.data$nGene)
+  mylist[[i]] <- vec
+}
+
+nBS <- do.call("rbind",mylist)
+nBS <- as.data.frame(nBS)
+
+colnames(nBS) <- c("nBSmedGene","nBSmedUMI","nBScells")
+nBS$cellState <- rownames(wBS)
+nBS <- nBS[,c(4,3,1,2)]
+
+wBSnBS <- merge(wBS,nBS, by="cellState")
+wBSnBS <- wBSnBS[order(wBSnBS$wBSmedGene),]
+wBSnBS[is.na(wBSnBS)] <- 0
+
+rownames(wBSnBS) <- wBSnBS$cellState
+wBSnBS$cellState <- NULL
+
+```
+
+```{r tab2, echo = FALSE, fig.height = 20, fig.width = 18, out.height="50%", fig.align='center', fig.cap= "Median number of genes and UMIs obtained with different beads and cell suspensions. ChemGenes beads, cell suspensions from whole animal dissociation (CG). Biosearch beads (BS), cell suspensions from whole animal dissociation and FACS sorted cells. Biosearch beads (wBS), cell suspensions from whole animal dissociation. Biosearch beads (nBS), neuronal cells enriched using FACS."}
+
+# Table, create table for median gene and UMI numbers for all states for 
+# ChemGenes libraries, Biosearch libraries, Biosearch whole animal (w), 
+# Biosearch FACS neuronal cells (n)
+
+comb <- merge(cgBS,wBSnBS,by="row.names",all.x=TRUE)
+rownames(comb) <- comb$Row.names
+comb$Row.names <- NULL
+
+comb <- comb[order(comb$CGmedGene),]
+comb[is.na(comb)] <- 0
+
+#function to scale each column to the range
+norm <- function(x) {
+    apply(x, 2, function(y){(y-min(y))/(max(y)-min(y))})
+}
+
+bluecol <- colorRamp(c("red", "yellow", "green"))(norm(comb))
+bluecol <- rgb(bluecol[, 1], bluecol[, 2], bluecol[, 3], max=255)
+
+tt <- ttheme_default(core=list(bg_params=list(fill=bluecol)))
+
+g <- tableGrob(comb, theme=tt)
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 2, b = nrow(g), l = 1, r = ncol(g))
+g <- gtable_add_grob(g,
+    grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+    t = 1, l = 1, r = ncol(g))
+grid.draw(g)
+
+```
+
+## Cut-off exploration {-}
+
+We next evaluate the impact of cut-off selection for number of genes and UMIs per cell on cells retained in the analysis (Fig. \ref{fig:cutoffs}). No clear cut-offs are suggested in elbow plots (not shown). Increasing the lower gene cut-off to 400 cells would exclude 1,725 cells, a large fraction of which these are neurons (Fig. \ref{fig:cutoffs}). C). All identified cell states are present at a lower cut-off of 300 genes per cell. On the high end (> 7000 genes) we find that cells contribute to multiple clusters not suggesting that particular doublet categories can be excluded via cut-off selection. We also explore the cells that each library contributes to the data set (Fig. \ref{fig:cellplib}). We find a similar contribution from libraries that were generated using whole animals (Fig. \ref{fig:cellplib} B-G, M-N). In libraries that contained sexually reproducing animals (Fig. \ref{fig:cellplib}), H-K) the ratio of germline cells is increased. Neuronal libraries are predominantly composed of neuronal progenitors and differentiated neurons as well as, at lower numbers, of other interstitial somatic cells such as gland cells and nematocytes. For the down-stream analyses we settled on >300 < 7k genes, >500UMI < 50k UMIs as cut-offs.\
+
+```{r cutoff_exploration, echo=FALSE, warning=F, results='hide'}
+
+# Plot to explore cutoff selection
+
+p0 <- TSNEPlot(object = ds.ds, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle("Annotated t-SNE")
+
+# Low nGene
+
+lg <- 200
+hg <- 300
+gate1 <- WhichCells(ds.ds, subset.name="nGene", accept.high=hg)
+l1 <- length(gate1)
+p1 <- TSNEPlot(object = ds.ds, cells.use = gate1, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lg," & ", "<", hg," genes, ",l1," cells"))
+
+lg <- 200
+hg <- 400
+gate2 <- WhichCells(ds.ds, subset.name="nGene", accept.high=hg)
+l2 <- length(gate2)
+p2 <- TSNEPlot(object = ds.ds, cells.use = gate2, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lg," & ", "<", hg," genes, ",l2," cells"))
+
+lg <- 200
+hg <- 500
+gate3 <- WhichCells(ds.ds, subset.name="nGene", accept.high=hg)
+l3 <- length(gate3)
+p3 <- TSNEPlot(object = ds.ds, cells.use = gate3, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lg," & ", "<", hg," genes, ",l3," cells"))
+
+# High nGene
+
+lg <- 6000
+gate4 <- WhichCells(ds.ds, subset.name="nGene",  accept.low=lg)
+l4 <- length(gate4)
+p4 <- TSNEPlot(object = ds.ds, cells.use = gate4, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lg," genes, ",l4," cells"))
+
+lg <- 6500
+gate5 <- WhichCells(ds.ds, subset.name="nGene",  accept.low=lg)
+l5 <- length(gate5)
+p5 <- TSNEPlot(object = ds.ds, cells.use = gate5, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lg," genes, ",l5," cells"))
+
+lg <- 7000
+gate6 <- WhichCells(ds.ds, subset.name="nGene",  accept.low=lg)
+l6 <- length(gate6)
+p6 <- TSNEPlot(object = ds.ds, cells.use = gate6, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lg," genes, ",l6," cells"))
+
+lg <- 7500
+gate7 <- WhichCells(ds.ds, subset.name="nGene",  accept.low=lg)
+l7 <- length(gate7)
+p7 <- TSNEPlot(object = ds.ds, cells.use = gate7, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lg," genes, ",l7," cells"))
+
+# Low nUMI
+
+lu <- 400
+hu <- 500
+gate8 <- WhichCells(ds.ds, subset.name="nUMI", accept.high=hu)
+l8 <- length(gate8)
+p8 <- TSNEPlot(object = ds.ds, cells.use = gate8, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lu,"UMIs & ", "<", hu," UMIs, ",l8," cells"))
+
+lu <- 400
+hu <- 600
+gate9 <- WhichCells(ds.ds, subset.name="nUMI", accept.high=hu)
+l9 <- length(gate9)
+p9 <- TSNEPlot(object = ds.ds, cells.use = gate9, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lu,"UMIs & ", "<", hu," UMIs, ",l9," cells"))
+
+lu <- 400
+hu <- 700
+gate10 <- WhichCells(ds.ds, subset.name="nUMI", accept.high=hu)
+l10 <- length(gate10)
+p10 <- TSNEPlot(object = ds.ds, cells.use = gate10, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lu,"UMIs & ", "<", hu," UMIs, ",l10," cells"))
+
+lu <- 400
+hu <- 800
+gate11 <- WhichCells(ds.ds, subset.name="nUMI", accept.high=hu)
+l11 <- length(gate11)
+p11 <- TSNEPlot(object = ds.ds, cells.use = gate11, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">",lu,"UMIs & ", "<", hu," UMIs, ",l11," cells"))
+
+# High UMI numbers
+
+hu <- 45000
+gate12 <- WhichCells(ds.ds, subset.name="nUMI", accept.low=hu)
+l12 <- length(gate12)
+p12 <- TSNEPlot(object = ds.ds, cells.use = gate12, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">", hu," UMIs, ",l12," cells"))
+
+hu <- 50000
+gate13 <- WhichCells(ds.ds, subset.name="nUMI", accept.low=hu)
+l13 <- length(gate13)
+p13 <- TSNEPlot(object = ds.ds, cells.use = gate13, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">", hu," UMIs, ",l13," cells"))
+
+hu <- 55000
+gate14 <- WhichCells(ds.ds, subset.name="nUMI", accept.low=hu)
+l14 <- length(gate14)
+p14 <- TSNEPlot(object = ds.ds, cells.use = gate14, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">", hu," UMIs, ",l14," cells"))
+
+hu <- 60000
+gate15 <- WhichCells(ds.ds, subset.name="nUMI", accept.low=hu)
+l15 <- length(gate15)
+p15 <- TSNEPlot(object = ds.ds, cells.use = gate15, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle(paste0(">", hu," UMIs, ",l15," cells"))
+
+```
+
+```{r cutoffs, echo=FALSE, fig.height = 18, fig.width = 18, fig.cap= "Cut-off exploration. The permissive analysis included cells with > 200 and < 8k genes and > 400 < 70k UMIs. Range of expressed genes/detected UMIs for plotted cells and cell numbers are indicated in titles of individual plots."}
+
+plot_grid(p0,p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11,p12,p13,p14,p15, labels="AUTO", label_size = 20, align = "h", ncol=4)
+
+```
+
+```{r cell origin, echo=FALSE, message=F, warning=F, results='hide'}
+
+# Cells by origin
+
+p <- TSNEPlot(object = ds.ds, do.return=T, do.label = T, no.legend=TRUE, label.size = 4, pt.size=1.5, cex.names=6) + ggtitle("Resolution 1.5")
+
+# Get cell ids from each batch
+cells.use1 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "01-D1"]
+cells.use3 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "01-P2"]
+cells.use4 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "02-CO"]
+cells.use5 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "02-P1"]
+cells.use6 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "02-PB"]
+cells.use7 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "03-KI"]
+cells.use8 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "03-MA"]
+cells.use9 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "03-FM"]
+cells.use10 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "06-FM"]
+cells.use11 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "06-MA"]
+cells.use12 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "06-KI"]
+cells.use13 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "11-PO"]
+cells.use14 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "11-BU"]
+cells.use15 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "12-N1"]
+cells.use16 <- rownames(ds.ds@meta.data)[ds.ds@meta.data[,"orig.ident"] == "12-N2"]
+
+p0 <- TSNEPlot(object = ds.ds, cells.use = cells.use1, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("01-D1")
+p1 <- TSNEPlot(object = ds.ds, cells.use = cells.use3, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("01-P2")
+p2 <- TSNEPlot(object = ds.ds, cells.use = cells.use4, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("02-CO")
+p3 <- TSNEPlot(object = ds.ds, cells.use = cells.use5, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("02-P1")
+p4 <- TSNEPlot(object = ds.ds, cells.use = cells.use6, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("02-PB")
+p5 <- TSNEPlot(object = ds.ds, cells.use = cells.use7, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("03-KI")
+p6 <- TSNEPlot(object = ds.ds, cells.use = cells.use8, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("03-MA")
+p7 <- TSNEPlot(object = ds.ds, cells.use = cells.use9, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("03-FM")
+p8 <- TSNEPlot(object = ds.ds, cells.use = cells.use10, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("06-FM")
+p9 <- TSNEPlot(object = ds.ds, cells.use = cells.use11, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("06-MA")
+p10 <- TSNEPlot(object = ds.ds, cells.use = cells.use12, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("06-KI")
+p11 <- TSNEPlot(object = ds.ds, cells.use = cells.use13, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("11-PO")
+p12 <- TSNEPlot(object = ds.ds, cells.use = cells.use14, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("11-BU")
+p13 <- TSNEPlot(object = ds.ds, cells.use = cells.use15, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("12-N1")
+p14 <- TSNEPlot(object = ds.ds, cells.use = cells.use16, do.return=T, do.label = T, no.legend=TRUE, label.size = 4) + ggtitle("12-N2")
+
+```
+
+```{r cellplib, echo=FALSE, fig.height = 18, fig.width = 18, fig.cap= "Cells contributed by each library."}
+
+plot_grid(p,p0,p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11,p12,p13,p14, labels="AUTO", label_size = 20, align = "h", ncol=4)
+
+```
+
+\pagebreak
+
+### Software versions 
+
+This document was computed on `r format( Sys.time(), "%a %b %d %X %Y" )` with the following R package versions.\
+
+```{r session_summary, echo=FALSE, include=TRUE, comment=NA}
+	sessionInfo()
+```
+
+## References
