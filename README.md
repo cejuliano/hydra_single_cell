@@ -4,7 +4,7 @@
 
 This repository contains the code and analyses associated with a single-cell RNAseq analysis of homeostatic Hydra. This work is presented in the following bioarxiv preprint:
 
->Siebert S, Farrell JA, Cazet J, Abeykoon Y, Primack AS, Schnitzler CE, Juliano CE (2018) Stem cell differentiation trajectories in Hydra resolved at single cell resolution.
+>Siebert S, Farrell JA, Cazet J, Abeykoon Y, Primack AS, Schnitzler CE, Juliano CE (2018) Stem cell differentiation trajectories in Hydra resolved at single cell resolution. [https://doi.org/10.1101/460154](https://www.biorxiv.org/content/early/2018/11/03/460154)
 
 The repository includes a number of files needed to recreate these analyses. UMI count matrices (for transcriptome and genome mapped Drop-seq reads) and isoform level expression estimates for epithelium specific gene expression can be downloaded at the GEO repository; accession GSE121617.
 
