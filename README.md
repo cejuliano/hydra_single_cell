@@ -6,6 +6,8 @@ This repository contains the code and analyses associated with a single-cell RNA
 
 >Siebert S, Farrell JA, Cazet J, Abeykoon Y, Primack AS, Schnitzler CE, Juliano CE (2018) Stem cell differentiation trajectories in Hydra resolved at single cell resolution. [https://doi.org/10.1101/460154](https://www.biorxiv.org/content/early/2018/11/03/460154)
 
+![Figure 1](https://raw.githubusercontent.com/cejuliano/hydra_single_cell/master/SA_figures/Hydra_single_cell.jpg)
+
 The repository includes a number of files needed to recreate these analyses. UMI count matrices (for transcriptome and genome mapped Drop-seq reads) and isoform level expression estimates for epithelium specific gene expression can be downloaded at the GEO repository; accession GSE121617.
 
 The transcriptome and the genome can be accessed, searched via blast and downloaded at https://research.nhgri.nih.gov/hydra/.
