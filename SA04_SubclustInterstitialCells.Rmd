@@ -1,7 +1,7 @@
 ---
 title: "SA04 - Subclustering of cells from the interstitial lineage"
 author: "Stefan Siebert"
-date: "November 1, 2018"
+date: "November 1, 2018, updated on May 22, 2019"
 bibliography: SA.bib
 csl: bib.csl
 site: "bookdown::bookdown_site"
@@ -49,16 +49,14 @@ hFind <- function (x) {
 
 ## Subsetting - cells of the interstitial lineage {-}
 
-We load the full data set and extract interstitial clusters (Fig. \ref{fig:icsubset}). This subset was used to perfom NMF to identify gene expression modules expressed in cells of the interstitial lineage (NMF analysis ic_K75).\ 
+We load the full data set and extract interstitial clusters (Fig. \ref{fig:icsubset}). This subset was used to perform NMF to identify gene expression modules expressed in cells of the interstitial lineage (NMF analysis ic_K75).\ 
 
 ```{r icsubset, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Subsetting cells of the interstitial lineage. A) Full t-SNE, B) Interstitial clusters."}
 
-# Read data object for the whole dataset 
-
-# Read full data object
+# Read Seurat object for the whole dataset 
 ds.s1 <- readRDS("objects/Hydra_Seurat_Whole_Transcriptome.rds")
 
-## Suspected doublet cluster db (68 cells) was excluded from from downstream analyses
+# Suspected doublet cluster db (68 cells) was excluded from downstream analyses
 ds.s1 <- SubsetData(object = ds.s1, ident.remove= c("db"), subset.raw = TRUE)
 
 # Run this to restore original cluster numbering
@@ -99,11 +97,11 @@ ds.ic <- ProjectPCA(object = ds.ic)
 # Approximation of amount of variance encoded by each PC
 PCElbowPlot(object = ds.ic, num.pc = 40)
 
-# We run RunTSNE() for a range of principal components, seed and perplexities on compute cluster
-# PCs 1:26 though 1:40
-# seed: 1, 300, 400
-# perplexity: 20, default (30), 40
-# The selected analysis considered PCs 1:31, perplexity 40, seed 300
+# We run RunTSNE() for a range of principal components, seed and perplexities on a compute cluster: 
+# PCs 1:26 though 1:40; 
+# seed: 1, 300, 400; 
+# perplexity: 20, default (30), 40; 
+# The selected analysis considered PCs 1:31, perplexity 40, seed 300.
 
 ds.ic <- FindClusters(object = ds.ic, reduction.type = "pca", dims.use = 1:31, force.recalc = TRUE, resolution = 1.5, print.output = 0)
 ds.ic <- RunTSNE(object = ds.ic, dims.use = c(1:31), do.fast = T, perplexity = 40)
@@ -115,7 +113,7 @@ ds.ic <- RunTSNE(object = ds.ic, dims.use = c(1:31), do.fast = T, perplexity = 4
 ```{r tsneclust, fig.height = 9, fig.width = 9, message=F, fig.align='center', out.height="60%", warning=F, fig.cap= "t-SNE plot for cells from the interstitial cell lineage."}
 
 # Since t-SNE is not deterministic we here load the object of our original analysis
-#ds.ic <- readRDS("objects/ds.ic.s300_pc31_p40.rds")
+ds.ic <- readRDS("objects/ds.ic.s300_pc31_p40.rds")
 
 TSNEPlot(object = ds.ic, do.return=T, do.label = T, no.legend=TRUE, pt.size = 0.5)
 
@@ -123,7 +121,7 @@ TSNEPlot(object = ds.ic, do.return=T, do.label = T, no.legend=TRUE, pt.size = 0.
 
 ## Cluster annotation {-}
 
-We annotate the t-SNE using published marker genes (Fig. \ref{fig:annotate}, \ref{fig:annottsne}).\
+We annotate the t-SNE using published marker genes (Fig. \ref{fig:annotate}, \ref{fig:annottsne}). We apply neuron annotations from the neuronal subclustering (see analysis SA05_SubclustNeuronalCells). \
 
 ```{r function annotate, include=F}
 
@@ -140,57 +138,103 @@ hFind <- function (x) {
 
 ```
 
-```{r annotate, fig.height = 18, fig.width = 18, message=F, warning=F, fig.keep='last', fig.cap= "Selected markers used for cluster annotation. A) t-SNE plot. B) Interstitial stem cells, progenitor, germline - Cnnos1 [@Mochizuki:2000wu]. C) Differentiating progenitors - HvSoxC (this study)[@Hemmrich:2012kp]. D) Neuronal cells - ELAV2 (t3974) (this study). E) Neurogenesis, gland cell differentiation - Myb-like (t27424) (this study). F) Interstitial stem cells, nematoblasts -  FOXL1 (t12642) (this study). G) Nematoblasts - Nowa-1 [@Engel:2002uj]. H) Nematoblasts - HyDkk-3 [@Fedders:2004co]. I) Differentiated nematocyte - nematocillin A [@Hwang:2008gd]. J) Female germline - periculin1a [@Fraune:2010hh]. K) Male germline - histone H10A (t3863) (this study). L) Granular and spumous mucous gland cells - MUC2 (t7059). M) Granular mucous gland cells - HyTSR1 [@Siebert:2008kf]. N) Zymogen gland cell - Hydkk1/2/4 C [@Augustin:2006bb, Guder:2006gg]. O) Zymogen gland cell - Hydkk1/2/4 A [@Augustin:2006bb, Guder:2006gg]. P) Zymogen gland cell - CHIA (t18356) (this study)."}
+```{r annotate, fig.height = 18, fig.width = 18, message=F, warning=F, fig.keep='last', fig.cap= "Selected markers used for cluster annotation. A) Interstitial stem cells, progenitor, germline - Hywi [@Juliano:2014gn]. B) Interstitial stem cells, progenitor, germline - Cnnos1 [@Mochizuki:2000wu]. C) Differentiating progenitors - HvSoxC (this study)[@Hemmrich:2012kp]. D) Neuronal cells - ELAV2 (t3974) (this study). E) Neurogenesis, gland cell differentiation - Myb (t27424) (this study). F) Interstitial stem cells, nematoblasts -  FOXL1 (t12642) (this study). G) Nematoblasts - Nowa-1 [@Engel:2002uj]. H) Nematoblasts - HyDkk-3 [@Fedders:2004co]. I) Differentiated nematocyte - nematocillin A [@Hwang:2008gd]. J) Female germline - periculin1a [@Fraune:2010hh]. K) Male germline - histone H10A (t3863) (this study). L) Granular and spumous mucous gland cells - MUC2 (t7059). M) Granular mucous gland cells - HyTSR1 [@Siebert:2008kf]. N) Zymogen gland cell - Hydkk1/2/4 C [@Augustin:2006bb, Guder:2006gg]. O) Zymogen gland cell - Hydkk1/2/4 A [@Augustin:2006bb, Guder:2006gg]. P) Zymogen gland cell - CHIA (t18356) (this study)."}
 
 # Genes to be plotted
-gene.names <- c(hFind("t11407aep"),hFind("t15393aep"),hFind("t3974aep"),hFind("t27424aep"),hFind("t12642aep"),hFind("t15237aep"),hFind("t22117aep"),hFind("t23176aep"),hFind("t11117aep"),hFind("t38683aep"),hFind("t7059aep"),hFind("t35863aep"),hFind("t14102aep"),hFind("t8678aep"),hFind("t18356aep"))
+gene.names <- c(hFind("t34367aep"),hFind("t11407aep"),hFind("t15393aep"),hFind("t3974aep"),hFind("t27424aep"),hFind("t12642aep"),hFind("t15237aep"),hFind("t22117aep"),hFind("t23176aep"),hFind("t11117aep"),hFind("t38683aep"),hFind("t7059aep"),hFind("t35863aep"),hFind("t14102aep"),hFind("t8678aep"),hFind("t18356aep"))
 
 # Updated gene names for readability
 
-new.names <- c("Cnnos1","HvSoxC","ELAV2 (t3974)","Myb domain (t27424)","FOXL1 (t12642)","nowa-1","HyDkk-3","nematocilin A","periculin1a","H10A (t38683)","MUC2 (t7059)","HyTSR1","HyDkk1/2/4 C","HyDkk1/2/4 A","CHIA (t18356)")
+new.names <- c("Hywi","Cnnos1","HvSoxC","ELAV2 (t3974)","Myb (t27424)","FOXL1 (t12642)","nowa-1","HyDkk-3","nematocilin A","periculin1a","H10A (t38683)","MUC2 (t7059)","HyTSR1","HyDkk1/2/4 C","HyDkk1/2/4 A","CHIA (t18356)")
 
 # Annotate
 update.names(gene.names, new.names)
 
 # Plot with tsne
-p1 <- TSNEPlot(object = ds.ic, do.label = T, label.size = 5, pt.size=0.5, cex.names=6, no.legend = TRUE, do.return=TRUE)
-p2 <- FeaturePlot(ds.ic,  c("Cnnos1","HvSoxC","ELAV2 (t3974)","Myb domain (t27424)","FOXL1 (t12642)","nowa-1","HyDkk-3","nematocilin A","periculin1a","H10A (t38683)","MUC2 (t7059)","HyTSR1","HyDkk1/2/4 C","HyDkk1/2/4 A","CHIA (t18356)"), cols.use=c("grey", "blue"), do.return=TRUE)
+p <- FeaturePlot(ds.ic,  c("Hywi","Cnnos1","HvSoxC","ELAV2 (t3974)","Myb (t27424)","FOXL1 (t12642)","nowa-1","HyDkk-3","nematocilin A","periculin1a","H10A (t38683)","MUC2 (t7059)","HyTSR1","HyDkk1/2/4 C","HyDkk1/2/4 A","CHIA (t18356)"), cols.use=c("grey", "blue"), do.return=TRUE)
 
-plotlist <- prepend(p2, list(p1))
-
-plot_grid(plotlist= plotlist, labels="AUTO", label_size = 30, align = "h", ncol=4)
+plot_grid(plotlist= p, labels="AUTO", label_size = 30, align = "h", ncol=4)
 
 ```
 
-```{r annottsne, fig.height = 12, fig.width = 12, out.height="50%", fig.align='center', fig.cap= "Annotated t-SNE representation for cells of the interstitial cell lineage. db: doublet, fmgl: female germline, gc: gland cell, gmgc: granular mucous cell, mgl: male germline, nc: neuronal cell, nb: nematoblast, nem: nematocyte, smgc: spumous mucous cell, prog: progenitor, SC: stem cell, zmg: zymogen gland cell."}
+```{r annottsne, fig.height = 12, fig.width = 12, out.height="50%", fig.align='center', fig.cap= "Annotated t-SNE representation for cells of the interstitial cell lineage. db: doublet, fmgl: female germline, gc: gland cell, gmgc: granular mucous cell, mgl: male germline, n: neuron, nb: nematoblast, smgc: spumous mucous cell, prog: progenitor, SC: stem cell, zmg: zymogen gland cell."}
 
-# Annotate cluster
+## Annotate cluster
 
-# Stash
-ds.ic <- StashIdent(object = ds.ic, save.name = "cluster_numbering")
+# Multiple cluster annotations were used in the course of this study. We store them in the Seurat object. 
+# They can be restored using Seurat function SetAllIdent().
 
-# Choose resolution, in case multiple resolutions were run
-ds.ic <- SetAllIdent(ds.ic, "res.1.5")
+# Load whole transcriptome cluster numbering
+ds.ic <- SetAllIdent(object = ds.ic, id = "cluster_numbering")
+
+# Stash cluster ids from the whole transcriptome clustering
+ds.ic <- StashIdent(object = ds.ic, save.name = "wt_clusters")
+ds.ic@meta.data$cluster_numbering <- NULL
+
+# Run this to restore original interstitial cluster numbering
+ds.ic <- SetAllIdent(object = ds.ic, id = "res.1.5")
 
 # Current ids
 current.cluster.ids <- as.character(0:33)
 
-# Restore original cluster numbering before trying new names
-ds.ic <- SetAllIdent(object = ds.ic, id = "cluster_numbering")
-
-# Load annotations
+# Cluster labeling scheme used in the bioRxiv preprint (Fig. 3A)
 cluster.names <- c("SC/nb", "nb1", "nc_gc_prog", "smgc2", "nem", "zmg1", "fmgl1", "nb2", "nc_prog", "fmgl2_nurse", "gmgc_head", "nc1", "SC/prog", "mgl2", "nc2", "nc_prog/nc9", "nb5", "nb4", "nc3", "nb3", "nc4", "nc5", "zmg2", "smgc1", "nc8", "nc6", "mgl1", "nc7", "nb6", "nb7", "gmgc_hyp", "db1", "db2", "nb8")
 
 # Update names in Seurat object
 ds.ic@ident <- plyr::mapvalues(x = ds.ic@ident, from = current.cluster.ids, to = cluster.names)
 
-TSNEPlot(object = ds.ic, do.return=T, do.label = T, label.size = 10, no.legend=TRUE)
+# Stash labels
+ds.ic <- StashIdent(object = ds.ic, save.name = "cluster.preprint")
+
+# Run this to restore original cluster numbering
+ds.ic <- SetAllIdent(object = ds.ic, id = "res.1.5")
+
+# Modified cluster labeling with consistent neuron labels across clusterings, short labels (useful when working in R)
+cluster.names <- c("SC/nb", "nb1", "n_gc_prog", "smgc2", "nematocyte", "zmg1", "fmgl1", "nb2", "n_prog", "fmgl2", "gmgc_head", "n_ec2", "ISC/prog", "mgl2", "n_ec3", "n_prog/n_ec1A", "nb5", "nb4", "n_en1", "nb3", "n_en2", "n_ec4", "zmg2", "smgc1", "n_ec1B", "n_ec5", "mgl1", "n_en3", "nb6", "nb7", "gmgc_hyp", "db1", "db2", "nb8")
+
+# Update names in Seurat object
+ds.ic@ident <- plyr::mapvalues(x = ds.ic@ident, from = current.cluster.ids, to = cluster.names)
+
+# Stash labels
+ds.ic <- StashIdent(object = ds.ic, save.name = "cluster.short")
+
+TSNEPlot(object = ds.ic, do.return=T, do.label = T, label.size = 9, no.legend=TRUE)
+
+# Run this to restore original cluster numbering
+ds.ic <- SetAllIdent(object = ds.ic, id = "res.1.5")
+
+# Modified cluster labeling with consistent neuron labels across clusterings and long labels for Broad portal presentation
+cluster.names <- c("ISC/nematoblast", "nematoblast_1", "neuron/gland_cell_progenitor", "spumous_mucous_gland_cell_2", "nematocyte", "zymogen_gland_cell_1", "female_germline_1", "nematoblast_2", "neuron_progenitor", "female_germline_2_nurse_cell", "granular_mucous_gland_cell(head)", "neuron_ec2", "ISC/progenitor", "male_germline_2", "neuron_ec3", "neuron_prog/neuron_ec1A", "nematoblast_5", "nematoblast_4", "neuron_en1", "nematoblast_3", "neuron_en2", "neuron_ec4", "zymogen_gland_cell_2", "spumous_mucous_gland_cell_1", "neuron_ec1B", "neuron_ec5", "male_germline_1", "neuron_en3", "nematoblast_6", "nematoblast_7", "granular_mucous_gland_cell(hyp)", "db1", "db2", "nematoblast_8")
+
+# Update names in Seurat object
+ds.ic@ident <- plyr::mapvalues(x = ds.ic@ident, from = current.cluster.ids, to = cluster.names)
+
+# Stash labels
+ds.ic <- StashIdent(object = ds.ic, save.name = "cluster.long.portal")
+
+# Run this to restore original cluster numbering
+ds.ic <- SetAllIdent(object = ds.ic, id = "res.1.5")
+
+# Modified cluster labeling used in manuscript (Fig. 3A)
+cluster.names <- c("ISC/nb", "nb1", "n/gc_prog", "smgc2", "nematocyte", "zymogen_gc_1", "female_germline_1", "nb_2", "n_progenitor", "female_germline_2_nurse_cell", "granular_mgc(head)", "neuron_ec2", "ISC/prog", "male_germline_2", "neuron_ec3", "n_prog/neuron_ec1A", "nb5", "nb4", "neuron_en1", "nb3", "neuron_en2", "neuron_ec4", "zymogen_gc_2", "smgc1", "neuron_ec1B", "neuron_ec5", "male_germline_1", "neuron_en3", "nb_6", "nb_7", "granular_mgc(hyp)", "db1", "db2", "nb_8")
+
+# Update names in Seurat object
+ds.ic@ident <- plyr::mapvalues(x = ds.ic@ident, from = current.cluster.ids, to = cluster.names)
+
+ds.ic <- StashIdent(object = ds.ic, save.name = "cluster.manuscript")
+
+# restore a particular labeling scheme  
+#ds.ic <- SetAllIdent(object = ds.ic, id = "res.1.5")  
+#ds.ic <- SetAllIdent(object = ds.ic, id = "cluster.preprint")  
+#ds.ic <- SetAllIdent(object = ds.ic, id = "cluster.short")  
+#ds.ic <- SetAllIdent(object = ds.ic, id = "cluster.long.portal") 
+#ds.ic <- SetAllIdent(object = ds.ic, id = "cluster.manuscript")  
 
 ```
 
 ## Identification of doublet clusters {-}
 
-We load gene modules that were identified in NMF analyses for the whole dataset (wt_K96). We plot scores for selected epithelial metagenes on the t-SNE representation for the whole dataset and the t-SNE representation for the cells of the interstitial lineage (Fig. \ref{fig:metagenedoublet}). High scores for epithelial gene modules suggest an epithelial component in the transcriptomes of cells in interstitial clusters db1 and db2. These cells were excluded from downstream analyses. 
+We load gene modules that were identified in NMF analyses for the whole dataset (wt_K96). We plot scores for selected epithelial metagenes on the t-SNE representation for the whole dataset and on the t-SNE representation for the cells of the interstitial lineage (Fig. \ref{fig:metagenedoublet}). High scores for epithelial gene modules suggest an epithelial component in the transcriptomes of cells in interstitial clusters db1 and db2. These cells were excluded from downstream analyses. We update cluster labels to improve clarity and accessibility (Fig. \@ref(tsneic)).
 
 ```{r metagene, results='hide', message=F, warning=F, fig.keep='none'}
 
@@ -225,13 +269,12 @@ ds.ic@meta.data <- cbind(ds.ic@meta.data,cellScores)
 head(ds.ic@meta.data)
 
 #saveRDS("objects/Hydra_Seurat_IC.rds")
-ds.ic <- readRDS("objects/Hydra_Seurat_IC.rds")
                  
 ```
 
 ```{r metagenedoublet, fig.height = 18, fig.width = 18, message=F, warning=F, fig.keep='last', fig.cap= "Expression of epithelial metagenes in cells of the interstitial lineage indicate hybrid transcriptomes in cells of clusters db1 and db2. A-D) Expression of four ectodermal gene modules visualized on the whole dataset t-SNE plot. E-H) Expression of ectodermal gene modules plotted on the t-SNE representation for the interstitial cell subset. I-L) Expression of four endodermal gene modules on the whole dataset t-SNE plot. M-P) Expression of endodermal gene modules plotted on the t-SNE representation for the interstitial cell subset."}
                  
-# Plot epithelial metagene scores on full t-SNE and intertitial t-SNE
+# Plot epithelial metagene scores on full t-SNE and interstitial t-SNE
 p <- FeaturePlot(ds.s1, c("wt11","wt36","wt40","wt42","wt12","wt28","wt30","wt38"), do.return=TRUE, cols.use = c("grey", "blue"))
 p1 <- FeaturePlot(ds.ic, c("wt11","wt36","wt40","wt42","wt12","wt28","wt30","wt38"), do.return=TRUE, cols.use = c("grey", "blue"))
 
@@ -239,13 +282,15 @@ plot_grid(p[[1]], p[[2]], p[[3]], p[[4]], p1[[1]], p1[[2]], p1[[3]], p1[[4]], p[
 
 ```
 
+![\label{tsneic} Annotated t-SNE plot with labels edited for clarity (manuscript Fig. 3A). ec: ectoderm, en: endoderm, gc: gland cell, hyp: hypostome, ISC: interstitial multipotent stem cell, mgc: mucous gland cell, n: neuron, nb: nematoblast, smgc: spumous mucous gland cell, prog: progenitor.](SA_figures/SA04_figures/tsne_icell.jpg){width=18cm}
+
 ## Reclustering of cells prior to URD trajectory reconstruction {-}
 
-We recalculate variable genes, PCs and recluster after excluding clusters db1 and db2. PCs and clustering from this analysis are used in URD trajectory reconstruction. We add them to our interstitial cell Seurat object (Hydra_Seurat_IC.rds) as ic.original.pca and clustering2.
+We recalculate variable genes, PCs and recluster after excluding clusters db1 and db2. PCs and clustering from this analysis are used in the URD trajectory reconstruction. We add them to our interstitial cell Seurat object (Hydra_Seurat_IC.rds) as ic.original.pca and clustering2.
 
 ```{r PCA, eval=FALSE, cache.lazy = FALSE, cache=TRUE, results='hide', message=F, warning=F, fig.keep='none'}
 
-# remove doublet cluster
+# Remove doublet cluster
 ds.ic.s1 <- SubsetData(object = ds.ic, ident.remove=c("db1","db2"), subset.raw = TRUE)
 
 ds.ic.s1 <- FindVariableGenes(object = ds.ic.s1, mean.function = ExpMean, dispersion.function = LogVMR, 
@@ -257,19 +302,12 @@ ds.ic.s1 <- ProjectPCA(object = ds.ic.s1)
 ds.ic.s1 <- FindClusters(object = ds.ic.s1, reduction.type = "pca", dims.use = 1:31, force.recalc = TRUE, resolution = 1.5, print.output = 0)
 ds.ic.s1 <- RunTSNE(object = ds.ic.s1, dims.use = c(1:31), do.fast = T, perplexity = 40)
 
-# URD object
-
 # We add the updated PCA and the updated clustering to our interstitial cell object
 
 # Extract the clustering
 ds.ic.s1.meta <- ds.ic.s1@meta.data 
 
-# Drop columns that are not needed
-ds.ic.s1.meta$nGene <- NULL
-ds.ic.s1.meta$nUMI <- NULL
-ds.ic.s1.meta$orig.ident <- NULL
-ds.ic.s1.meta$percent.mito <- NULL
-ds.ic.s1.meta$cluster_numbering <- NULL
+ds.ic.s1.meta  <- ds.ic.s1.meta[c(5)]
 
 ds.ic.s1.meta <- as.data.frame(ds.ic.s1.meta)
 # Rename clustering
@@ -288,12 +326,10 @@ ds.ic@meta.data[order(ds.ic@meta.data$id), ]
 ds.ic@meta.data$Row.names <- NULL
 ds.ic@meta.data$id <- NULL
 
-# Add updated PCA to Hydra_Seurat_IC.rds
-ic.original.pca <- ds.ic.s1@dr$pca
+# Add updated PCA to Hydra_Seurat_IC.rds. This is the 2nd PCA in this document but the one that was originally used in the URD analysis.
+ds.ic@dr$ic.original.pca <- ds.ic.s1@dr$pca
 
-ds.ic@dr$ic.original.pca <- ic.original.pca
-
-#saveRDS(ds.ic,"/objects/Hydra_Seurat_IC.rds"))
+#saveRDS(ds.ic,"/objects/Hydra_Seurat_IC.rds")
 
 ```
 

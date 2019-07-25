@@ -1,7 +1,7 @@
 ---
 title: "SA05 - Subclustering of neuronal cells"
 author: "Stefan Siebert"
-date: "October 25, 2018"
+date: "October 25, 2018, updated on May 21, 2019"
 bibliography: SA.bib
 csl: bib.csl
 site: "bookdown::bookdown_site"
@@ -24,7 +24,7 @@ opts_chunk$set(tidy.opts=list(width.cutoff=80),tidy=TRUE,dev="png",dpi=150)
 
 ## Summary {-}
 
-We subcluster cells from the neuronal cell lineage. Fluorescent activated cell sorting (FACS) as an additional step in the workflow introduces library specific (batch) effects in case of neuronal libraries 12- which we address in this subclustering. We are able to integrate cells from FACS libraries neuronal cells from whole animal libraries using canonical correlation analysis (CCA) [@Butler:2018ex].
+We subcluster neuronal cells. Fluorescent activated cell sorting (FACS) as an additional step in the workflow introduces library specific (batch) effects in case of neuronal libraries 12- which we address in this subclustering. We are able to integrate cells from FACS libraries and neuronal cells from whole animal libraries using canonical correlation analysis (CCA) [@Butler:2018ex].
 
 ## Preliminaries {-}
 
@@ -46,7 +46,7 @@ hFind <- function (x) {
 }
 
 # We assume a folder "objects" in the markdown directory that contains our raw count object and all Seurat objects.
-# We also need epithelium specific gene expression estimates: GSE121617_DGE_ecto_endo_aepLRv2.txt
+# We also need epithelial expression estimates: GSE121617_DGE_ecto_endo_aepLRv2.txt
 
 ```
 
@@ -54,7 +54,7 @@ hFind <- function (x) {
 
 We load the interstitial data set and extract neuronal clusters (Fig. \ref{fig:ncsubset}). We include progenitor cells from clusters 2 and 8.\
 
-```{r ncsubset, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Subsetting cells of the neuronal lineage. A) t-SNE plot for cells of the interstitial lineage, B) Neuronal clusters including differentiated cells and progenitors."}
+```{r ncsubset, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Subsetting neuronal cells. A) t-SNE plot for cells of the interstitial lineage, B) Neuronal clusters including differentiated cells and progenitors."}
 
 # Load insterstitial object
 ds.ic <- readRDS("objects/Hydra_Seurat_IC.rds")
@@ -82,11 +82,11 @@ We find that FACS enriched neuronal cells separate from neuronal cells that were
 ```{r clustering, cache.lazy = FALSE, cache=TRUE, message=F, warning=F, results='hide', fig.keep='none'}
 
 # We cluster the cells without batch regression
+
 # Identify variable genes
 ds.nc <- FindVariableGenes(object = ds.nc, mean.function = ExpMean, dispersion.function = LogVMR, 
     x.low.cutoff = 0.05, x.high.cutoff = 4, y.cutoff = 0.5)
-# 5196 genes identified. More restrictive cut-offs and considering a lower number of variable genes yield similar results.
-# x.low.cutoff = 0.15, x.high.cutoff = 4, y.cutoff = 0.5, 2351 variable genes.
+# 5196 genes identified. More restrictive cut-offs and considering a lower number of variable genes yield similar clustering results.
 
 # Scale
 ds.nc <- ScaleData(object = ds.nc)
@@ -97,7 +97,9 @@ ds.nc <- RunPCA(object = ds.nc, pc.genes = ds.nc@var.genes, pcs.compute = 40, do
 ds.nc <- ProjectPCA(object = ds.nc)
 
 #perform permutation test to directly calculate p-values
+
 #ds.nc <- JackStraw(object = ds.nc, num.pc = 40, num.replicate = 100, do.print = FALSE)
+
 #JackStrawPlot(object = ds.nc, PCs=1:40)
 
 # Approximation of amount of variance encoded by each PC
@@ -110,11 +112,11 @@ ds.nc <- RunTSNE(object = ds.nc, dims.use = c(1:22), do.fast = T)
 
 ```
 
-```{r neurobatch, fig.height = 16, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "FACS introduces variability. A) t-SNE representation for all neuronal cells. B) Coloring by library reveals FACS batch effects. Cells from libraries 12- were sorted. C) Number of UMIs detected per cell. D) Number of genes detected per cell."}
+```{r neurobatch, fig.height = 16, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "FACS introduces variability. A) t-SNE representation for all neuronal cells. B) Coloring by library reveals FACS batch effects. Cells from libraries 12- were sorted prior to Drop-seq. Libraries 12- were created using Biosearch beads that captured lower read numbers per cell compared to Chemgenes beads. C) Number of UMIs detected per cell. D) Number of genes detected per cell."}
 
 # Load object from original analysis
-#ds.nc <- readRDS("objects/ds.nc.pc22.rds")
-
+ds.nc <- readRDS("objects/ds.nc.pc22.rds")
+# Visualize FACS effects
 p1 <- TSNEPlot(object = ds.nc, do.return=T, do.label = T, no.legend=TRUE) 
 p2 <- TSNEPlot(object = ds.nc, do.return=T, group.by="orig.ident")
 p3 <- FeaturePlot(object = ds.nc, do.return=T, features.plot = "nUMI", cols.use=c("grey", "red"))
@@ -214,7 +216,7 @@ We chose CCs 1-20 for the analysis (Fig. \ref{fig:bicor}).
 
 ```{r bicor, fig.height = 4, fig.width = 4, out.height="40%", message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Examining CC correlation strength. Drop-off in signal is observed after CC20."}
 
-# Explores CCs
+# Explore CCs
 p3 <- MetageneBicorPlot(hydra.combined, grouping.var = "batch", dims.eval = 1:30, 
     display.progress = FALSE)
 
@@ -260,7 +262,7 @@ hydra.combined <- FindClusters(hydra.combined, reduction.type = "cca.aligned",
 ```{r tsne, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "t-SNE representation after cell integration. A) t-SNE representation of neuronal cell clusters. B) Cells labeled by batch - FACS vs non-FACS."}
 
 # Load object from original analysis
-#hydra.combined <-readRDS("objects/ds.nc.integrated.rds")
+hydra.combined <-readRDS("objects/ds.nc.integrated.rds")
 
 p1 <- TSNEPlot(hydra.combined, do.label = T, do.return = T, pt.size = 0.5)
 p2 <- TSNEPlot(hydra.combined, do.return = T, pt.size = 0.5, group.by = "batch")
@@ -271,14 +273,13 @@ plot_grid(p1, p2, ncol=2, labels="AUTO", label_size = 20, align = "h")
 
 ## Identify genes with differential expression in epithelia  {-}
 
-The simple *Hydra* nervous system is composed of two nerve nets. One resides within the endoderm, the other within the ectoderm. We identify 12 neuronal clusters indicating distinct neuronal cell states. We are interested if these states can be assigned to a particular nerve net. We separate endoderm from ectoderm using body column tissue after removing head and foot. In this progress the neuronal cells stay associated with the respective epithelium. We assess differential gene expression using the package edgeR [@Robinson:2010cw]. We use the differentially expressed genes (that include differentially expressed neuronal genes) to place neuronal cells in one of the two epithelia. Three replicates each were collected for endodermal and ectodermal epithelial tissue. Outlier examination confirms the paired nature of the samples (Fig. \ref{fig:dge}).\
+The simple nervous system of *Hydra* is composed of two nerve nets. One resides within the endoderm, the other within the ectoderm. We identify 12 neuronal clusters indicating distinct neuronal cell states. We are interested if these states can be assigned to a particular nerve net. We separate endoderm from ectoderm using body column tissue after removing head and foot. In this process the neuronal cells stay associated with the respective epithelium. We assess differential gene expression using the package edgeR [@Robinson:2010cw]. We use the differentially expressed genes (that include differentially expressed neuronal genes) to place neuronal cells in one of the two epithelia. Three replicates each were collected for endodermal and ectodermal epithelial tissue. Outlier examination confirms the paired nature of the samples (Fig. \ref{fig:dge}).\
 
 ```{r dge, fig.height = 8, fig.width = 8, message=F, warning=F, fig.keep='last', fig.align='center', out.height="30%", fig.cap= "MDS plot for epithelial libraries. Distances between samples correspond to the leading biological coefficient of variation (BCV)."}
 
 # Tissue DGE
 
 # Import endo ecto counts, three replicates for each treatment. Counts were generated using RSEM/Bowtie.
-#s <- read.table("dge/DGE_ecto_endo_aepLRv2.matrix", header = TRUE)
 
 s <- read.csv("objects/GSE121617_DGE_ecto_endo_aepLRv2.txt", header = TRUE, sep="\t" )
 
@@ -295,7 +296,7 @@ p.value = 0.05
 
 # Define treatment groups for analysis
 TR <- factor(c("ec", "ec", "ec", "en", "en", "en"))
-# Set wild type as referemce
+# Set reference tissue
 TR <- relevel(TR, ref = "en")
 # Create data frame defining treatment type for each sample
 m <- data.frame(Sample=colnames(l[,c(2:7)]),TR)
@@ -414,14 +415,14 @@ hydra.combined <- AddModuleScore(hydra.combined, genes.list = list(Endo = Endo, 
 # nGene  nUMI orig.ident percent.mito res.1.5 cluster_numbering   stim res.0.6      Cluster1      Cluster2
 colnames(hydra.combined@meta.data) <- c("nGene", "nUMI", "orig.ident", "percent.mito", "res.1.5", "cluster_numbering", "batch", "res.0.6", "Endo", "Ecto")
 
-#saveRDS(hydra.combined,"objects/Hydra_Seurat_Neurons.rds")
+#saveRDS(hydra.combined,"objects/exploration/ds.nc.integrated_tissue.rds")
 
 ```
 
 ```{r endoecto, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Placing neuronal cell states in epithelia. Scoring cells for genes specific to epithelia suggest that cells in clusters 2,3, and 8 originated from the endodermal epithelium. Cells in cluster 11 are putative endodermal gland and nerve cell progenitors. blue: high scores for ectodermal gene set, red: high scores for endodermal gene set."}
 
 # Load object from original analysis
-#hydra.combined <- readRDS("objects/Hydra_Seurat_Neurons.rds")
+hydra.combined <- readRDS("objects/ds.nc.integrated_tissue.rds")
 
 # Plot tSNE and clusters labeled epithelial origin
 p1 <- TSNEPlot(hydra.combined, do.label = T, do.return = T, pt.size = 0.5, no.legend=TRUE)
@@ -440,16 +441,23 @@ nc.markers <- FindAllMarkers(object = hydra.combined, only.pos = TRUE, min.pct =
 top12 <- nc.markers %>% group_by(cluster) %>% top_n(12, avg_logFC)
 DoHeatmap(object = hydra.combined, genes.use = top12$gene, slim.col.label = TRUE, remove.key = TRUE)
 
+#saveRDS(hydra.combined,"objects/exploration/ds.nc.integrated_tissue_markers.rds") 
+
+#pdf("mFig/neuro_marker.pdf", width=21,height=19, bg ="white", useDingbats=FALSE)
+#DoHeatmap(object = hydra.combined, genes.use = top12$gene, slim.col.label = TRUE, remove.key = TRUE)
+#dev.off()
+
 ```
 
 ## Annotate clusters  {-}
 
-We annotate neuronal clusters using known and newly identified neuronal markers (Figs. \ref{fig:annotate}, \ref{fig:annotate2}).\
+We annotate neuronal clusters using known and newly identified neuronal markers (Figs. \ref{fig:marker}, \ref{fig:annotate}, \ref{fig:annotate2}, \@ref(tsneneuro)).\
 
 ```{r annotate, fig.height = 12, fig.width = 16, message=F, warning=F, fig.keep='last', fig.cap= "Expression of known and newly (without reference) identified neuronal markers used in neuronal cluster annotation. A) Neuronal subclustering. B) Neuronal cells colored by epithelial origin. Red - endoderm, blue ectoderm. C) *Hym-176 A*, ectodermal ganglion neurons (head/tentacles, body column, peduncle) [@Yum:1998fy]. D) *Innexin 2*, ectodermal ganglion cells (peduncle) [@Takaku:2014gy]. Data suggests wider expression in ectodermal neurons of body column, head and a subset of endodermal neurons. E) *RFamide preprohormone A*, ectodermal sensory and ganglion neurons (tentacle, head/hypostome, peduncle) [@Darmer:1998ww]. F) *RFamide preprohormone B*, ectodermal sensory neurons (tentacle, head/hypostome) [@Darmer:1998ww]. G) *RFamide preprohormone C*, ectodermal sensory neurons (tentacles) [@Darmer:1998ww]. H) *RFamide preprohormone D*, ectodermal sensory neurons  (tentacles) [@Hayakawa:2004ua]. I) *RFamide preprohormone E*, ectodermal sensory neurons (tentacles) (this study). J) *LW-amide*, ectodermal ganglion neurons (tentacles/head, body column, and basal disk, subset of endodermal neurons) (this study) [@Mitgutsch:1999br]. K) *Hym-355*, ectodermal ganglion neurons (tentacles/head, body column, and basal disk) [@Takahashi:1999hd]. L) *CnASH*, ectodermal sensory neurons (tentacles) [@Hayakawa:2004ua]."}
 
 # Plot for known and new neuronal markers
-#hydra.combined <- readRDS("objects/Hydra_Seurat_Neurons.rds")
+
+hydra.combined <- readRDS("objects/ds.nc.integrated_tissue.rds")
 
 # Function to annotate/rename genes
 update.names <- function(gene.names, new.names) {
@@ -486,31 +494,70 @@ plot_grid(p2[[1]],p2[[2]],p2[[3]],p2[[4]],p2[[5]],p2[[6]],p2[[7]],p2[[8]], label
 
 ```
 
-```{r neuroannot, fig.height = 9, fig.width = 9, message=F, warning=F, out.height="50%", fig.align='center', fig.keep='last', fig.cap= "Neuronal cell states labeled with cluster id, tentative neuron class based on published or new findings, in vivo localisation in the animal based on published or new findings. bd: basal disk, ect: ectoderm, end: endoderm, G: ganglion neuron, gc: gland cell, nc: neuronal cell, ped: peduncle, prog: progenitor, S: sensory neuron, tent: tentacle."}
+```{r neuroannot, fig.height = 9, fig.width = 9, message=F, warning=F, out.height="50%", fig.align='center', fig.keep='last', fig.cap= "Neuronal cell states labeled with cell layer, in vivo localisation in the animal based on published or new findings, tentative neuron class based on published or new findings. ec: ectoderm, en: endoderm, G: ganglion neuron, S: sensory neuron, tent: tentacle."}
 
-#hydra.combined <- readRDS("objects/Hydra_Seurat_Neurons.rds")
+hydra.combined <- readRDS("objects/ds.nc.integrated_tissue.rds")
 
-# LABELING neuro cluster
-# Store cluster numbering
+# LABELING neuronal clusters
+
+# The labeling was modified in the course of the study. We store the labeling schemes in the Seurat object.
+
 hydra.combined <- StashIdent(object = hydra.combined, save.name = "cluster_numbering")
 
 current.cluster.ids <- as.character(0:14)
 
-# Run this to restore original cluster numbering
-hydra.combined <- SetAllIdent(object = hydra.combined, id = "cluster_numbering")
+TSNEPlot(object = hydra.combined, do.return=T, do.label = T, label.size = 6, no.legend=TRUE) 
 
+# Preprint cluster labeling scheme (preprint, Fig. 6A)
 cluster.names <- c("0_prog","1_S_ect_tent","2_G_end_1","3_S_end_2","4_G_ect_tent/head","5_G_ect_tent","6_G_ect_body","7_G_ect_ped","8_unkown_end_3","9_G_ect_head/tent","10_G_ect_body","11_endo_gc_nc_prog","12_G_ect_bd","13_nc_prog","14_S_ect_head/hyp")
 
 # Update names in Seurat object
 hydra.combined@ident <- plyr::mapvalues(x = hydra.combined@ident, from = current.cluster.ids, to = cluster.names)
 
+# Stash labels
+hydra.combined <- StashIdent(object = hydra.combined, save.name = "cluster.preprint")
+
+# New neuron labeling scheme:
+#cluster - cluster name, 
+#0 - prog, 
+#1 - ec2, 
+#2 -	en1, 
+#3 -	en2, 
+#4 -	ec1B,  
+#5 -	ec4A, 
+#6 -	ec1A, 
+#7 - 	ec5, 
+#8 -	en3, 
+#9 -	ec3C,  
+#10 - ec3B, 
+#11	- en_gc/n_prog,
+#12	- ec3A, 
+#13	- ec3_prog, 
+#14	- ec4B.
+
+# Run this to restore original cluster numbering
+hydra.combined <- SetAllIdent(object = hydra.combined, id = "cluster_numbering")
+
+# Modified neuron labeling scheme that was applied to all clusterings in the manuscript
+cluster.names <- c("progenitor","ec2_tent_S","en1_head/body/foot_G","en2_head/body/foot_S","ec1B_head/tent_G","ec4A_tent_G","ec1A_body_G","ec5_peduncle_G","en3","ec3C_head/tent_G","ec3B_body_G","en_gc/n_progenitor","ec3A_basal_disk_G","ec3_progenitor","ec4B_head/hypo_S")
+
+# Update names in Seurat object
+hydra.combined@ident <- plyr::mapvalues(x = hydra.combined@ident, from = current.cluster.ids, to = cluster.names)
+
+# Stash labels
+hydra.combined <- StashIdent(object = hydra.combined, save.name = "cluster.manuscript")
+
 TSNEPlot(object = hydra.combined, do.return=T, do.label = T, label.size = 6, no.legend=TRUE) 
+
+#saveRDS(hydra.combined,"/objects/Hydra_Seurat_Neurons.rds")
 
 ```
 
+![\label{tsneneuro} Annotated t-SNE plot with labels edited for clarity (manuscript Fig. 6A). Cell states are annotated with cell layer, localization along the body column, tentative neuronal subtype category — sensory (S) or ganglion (G), and gene markers used in annotations. en: endoderm, ec: ectoderm.](SA_figures/SA05_figures/tsne_neuron.jpg){width=12cm}
+
 ## Characterization of the innexin gene family  {-}
 
-Innexins are transmembrane proteins that form gap junctions in invertebrates. The *Hydra* genome encodes a family of 17 innexin genes [@Chapman:2010ik]. The expression of two of these genes has been characterized. Innexin 1 has been shown to form gap junctions in ectodermal cells [@Alexopoulos:2004jl]. Neuronal expression and a role in *Hydra* contractile behavior has been reported for innexin 2 [@Takaku:2014gy]. We analyze innexin expression in all cells of the data set and the neuronal subset (Fig. \ref{fig:innexinwhole}, \ref{fig:innexinneuro}). Drop-seq data reveal a broad diversity of expression patterns and roles of innexins in different cell lineages and subsets of cells.
+Innexins are transmembrane proteins that form gap junctions in invertebrates. The *Hydra* genome encodes a family of 17 innexin genes [@Chapman:2010ik]. The expression of two of these genes has been characterized. *Innexin 1* has been shown to form gap junctions in ectodermal cells [@Alexopoulos:2004jl]. Neuronal expression and a role in *Hydra* contractile behavior has been reported for *Innexin 2* [@Takaku:2014gy]. We analyze innexin expression in all cells of the data set and the neuronal subset (Fig. \ref{fig:innexinwhole}, \ref{fig:innexinneuro}). Drop-seq data reveal a broad diversity of expression patterns and suggests roles of innexins in different cell lineages and subsets of cells.
 
 ```{r innexinwhole, fig.height = 20, fig.width = 16, message=F, warning=F, fig.align='center', out.height="75%", fig.keep='last', fig.cap= "Innexin family members with cell lineage and cell state specific expression. Innexin expression visualized on the full t-SNE. A) Innexin1 - endodermal and ectodermal epithelial cells, gland cells. B) Innexin 1a - interstitial stem cells, progenitor cells, female and male germline. C) Innexin2 - subset of differentiated neurons. D) Innexin3 - endodermal and ectodermal epithelial cells, gland cells. E) Innexin 4 - ectodermal epithelial cells. F) Innexin 5 - ectodermal epithelial cells. G) Innexin 6 - specific neuron. H) Innexin 7 - specific neuron. I) Innexin 8 - differentiating interstitial cells, neurons. J) Innexin 9 - nematoblast subpopulation. K) Innexin 9a - differentiated nematocytes. L) Innexin 10 - specific neuron. M) Innexin 11 - male germline. N) Innexin 12 - endodermal epithelial cells, neuron. O) Innexin 13 - endodermal and ectodermal epithelial cells. P) Innexin 14 - specific neuron. Q) Innexin 15 - specific neuron."}
 
@@ -542,13 +589,11 @@ update.names(gene.names, new.names)
 
 p2 <- FeaturePlot(ds.s1, c("Innexin 1","Innexin 1A","Innexin 2","Innexin 3","Innexin 4","Innexin 5","Innexin 6","Innexin 7","Innexin 8","Innexin 9","Innexin 9a","Innexin 10","Innexin 11","Innexin 12","Innexin 13","Innexin 14","Innexin 15"), cols.use=c("grey", "blue"), do.return=TRUE)
 
-#plot_grid(p2[[1]],p2[[2]],p2[[3]],p2[[4]],p2[[5]],p2[[6]],p2[[7]],p2[[8]],p2[[9]],p2[[10]],p2[[11]],p2[[12]],p2[[13]],p2[[14]],p2[[15]],p2[[16]],p2[[17]], labels="AUTO", label_size = 20, align = "h", ncol=4)
-
 plot_grid(plotlist= p2, labels="AUTO", label_size = 20, align = "h", ncol=4)
 
 ```
 
-```{r innexinneuro, fig.height = 20, fig.width = 16, message=F, out.height="75%", fig.align='center', warning=F, fig.keep='last', fig.cap= "Innexin family members with cell lineage and cell state specific expression. Innexin expression visualized on the full t-SNE. A) Innexin1 - endodermal and ectodermal epithelial cells, gland cells. B) Innexin 1a - interstitial stem cells, progenitor cells, female and male germline. C) Innexin2 - subset of differentiated neurons. D) Innexin3 - endodermal and ectodermal epithelial cells, gland cells. E) Innexin 4 - ectodermal epithelial cells. F) Innexin 5 - ectodermal epithelial cells. G) Innexin 6 - specific neuron. H) Innexin 7 - specific neuron. I) Innexin 8 - differentiating interstitial cells, neurons. J) Innexin 9 - nematoblast subpopulation. K) Innexin 9a - differentiated nematocytes. L) Innexin 10 - specific neuron. M) Innexin 11 - male germline. N) Innexin 12 - endodermal epithelial cells, neuron. O) Innexin 13 - endodermal and ectodermal epithelial cells. P) Innexin 14 - specific neuron. Q) Innexin 15 - specific neuron. "}
+```{r innexinneuro, fig.height = 20, fig.width = 16, message=F, out.height="75%", fig.align='center', warning=F, fig.keep='last', fig.cap= "Innexin family members with cell lineage and cell state specific expression. Innexin expression visualized on the t-SNE representation for neuronal cells. A) Innexin1 - endodermal and ectodermal epithelial cells, gland cells. B) Innexin 1a - interstitial stem cells, progenitor cells, female and male germline. C) Innexin2 - subset of differentiated neurons. D) Innexin3 - endodermal and ectodermal epithelial cells, gland cells. E) Innexin 4 - ectodermal epithelial cells. F) Innexin 5 - ectodermal epithelial cells. G) Innexin 6 - specific neuron. H) Innexin 7 - specific neuron. I) Innexin 8 - differentiating interstitial cells, neurons. J) Innexin 9 - nematoblast subpopulation. K) Innexin 9a - differentiated nematocytes. L) Innexin 10 - specific neuron. M) Innexin 11 - male germline. N) Innexin 12 - endodermal epithelial cells, neuron. O) Innexin 13 - endodermal and ectodermal epithelial cells. P) Innexin 14 - specific neuron. Q) Innexin 15 - specific neuron. "}
 
 
 # Function to annotate/rename genes
@@ -569,9 +614,7 @@ new.names  <- c("Innexin 1","Innexin 1A","Innexin 2","Innexin 3","Innexin 4","In
 
 update.names(gene.names, new.names)
 
-p2 <- FeaturePlot(ds.s1, c("Innexin 1","Innexin 1A","Innexin 2","Innexin 3","Innexin 4","Innexin 5","Innexin 6","Innexin 7","Innexin 8","Innexin 9","Innexin 9a","Innexin 10","Innexin 11","Innexin 12","Innexin 13","Innexin 14","Innexin 15"), cols.use=c("grey", "blue"), do.return=TRUE)
-
-#plot_grid(p2[[1]],p2[[2]],p2[[3]],p2[[4]],p2[[5]],p2[[6]],p2[[7]],p2[[8]],p2[[9]],p2[[10]],p2[[11]],p2[[12]],p2[[13]],p2[[14]],p2[[15]],p2[[16]],p2[[17]], labels="AUTO", label_size = 20, align = "h", ncol=4)
+p2 <- FeaturePlot(hydra.combined, c("Innexin 1","Innexin 1A","Innexin 2","Innexin 3","Innexin 4","Innexin 5","Innexin 6","Innexin 7","Innexin 8","Innexin 9","Innexin 9a","Innexin 10","Innexin 11","Innexin 12","Innexin 13","Innexin 14","Innexin 15"), cols.use=c("grey", "blue"), do.return=TRUE)
 
 plot_grid(plotlist= p2, labels="AUTO", label_size = 20, align = "h", ncol=4)
 

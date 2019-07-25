@@ -1,7 +1,7 @@
 ---
 title: "SA03 - Subclusterings of epithelial cells"
 author: "Stefan Siebert"
-date: "November 1, 2018"
+date: "November 1, 2018, updated on May 25, 2019"
 bibliography: SA.bib
 csl: bib.csl
 site: "bookdown::bookdown_site"
@@ -11,6 +11,8 @@ output:
 linestretch: 0.5
 fontsize: 11 pt
 geometry: margin= 2.0 cm
+editor_options: 
+  chunk_output_type: inline
 ---
 
 \fontsize{10}{18}
@@ -44,14 +46,14 @@ library(rlang)
 
 ## Subsetting - ectodermal cells {-}
 
-We load the full data set and extract ectodermal epithelial clusters. We consider cells that express more than 500 genes and include the battery cell clusters but omit body column clusters that are also positive for nematoblast/nematocyte expression (Fig. \ref{fig:ectosubset}). This subset was used to perfom non-negative matrix factorization (NMF) to identify metagenes expressed in ectodermal epithelial cells (SA07_nmf.rmd, NMF analysis ec_K76).\ 
+We load the full data set and extract ectodermal epithelial clusters. We consider cells that express more than 500 genes and include the battery cell clusters but omit body column clusters that are also positive for nematoblast/nematocyte expression (Fig. \ref{fig:ectosubset}). This subset was used to perform non-negative matrix factorization (NMF) to identify metagenes expressed in ectodermal epithelial cells (SA07_nmf.rmd, NMF analysis ec_K76).\ 
 
 ```{r ectosubset, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', results='hide', fig.align='center', fig.cap= "Subset of endodermal cells. A) t-SNE plot for all cells in the data set. B) Endodermal clusters."}
 
 # Read full data object
 ds.s1 <- readRDS("objects/Hydra_Seurat_Whole_Transcriptome.rds")
 
-## Suspected doublet cluster db (68 cells) was excluded from from downstream analyses
+# Suspected doublet cluster db (68 cells) was excluded from downstream analyses
 ds.s1 <- SubsetData(object = ds.s1, ident.remove= c("db"), subset.raw = TRUE)
 
 # Run this to restore original cluster numbering
@@ -70,13 +72,13 @@ plot_grid(p1, p2, ncol=2, labels="AUTO", label_size = 20, align = "h")
 
 ## Batch effects {-}
 
-We observe library specific effects (batch) in epithelial cells which are more pronounced in case of the ectodermal subset. There are potential sources for such effects. Drop-seq runs were conducted on different days and the culture may have been in a different state despite maintaining standard culturing conditions. Four libraries included sexually reproducing polyps and the physiological state may be reflected in the transcriptional signatures of ectodermal epithelial cells. In some *Hydra* strains sexual reproduction leads to dramatic exhaustion and even death [@Tardent:1974ba]. Additional confounding effects may have been introduced with the choice of medium used in the dissociations. The first three sets of libraries (01-, 02-, 03-) were generated using cells that were dissociated in *Hydra* culture medium. The remaining libraries were generated using cells that were dissociated using isotonic *Hydra* dissociation medium.  
+We observe library specific effects (batch) in epithelial cells which are more pronounced in case of the ectodermal subset. There are potential sources for such effects. Drop-seq runs were conducted on different days and the culture may have been in a different state despite maintaining standard culturing conditions. Four libraries included sexually reproducing polyps and the physiological state may be reflected in the transcriptional signatures of ectodermal epithelial cells. In some *Hydra* strains sexual reproduction leads to dramatic exhaustion and even death [@Tardent:1974ba]. Additional confounding effects may have been introduced with the choice of medium used in the dissociations. The first three sets of libraries (01-, 02-, 03-) were generated using cells that were dissociated in *Hydra* culture medium. The remaining libraries were generated using cells that were dissociated using isotonic *Hydra* dissociation medium (see Material & Methods).  
 
-To reduce the number of confounding effects we here consider cells from five selected libraries in the subclustering of ectodermal cells. Three libraries were collected on two consecutive days using ChemGenes beads and using *Hydra* culture medium in the dissociations (libraries 02-). Two additional libraries were collected on a single day using Biosearch beads and using dissociation medium to generate the cell suspensions (libraries 11-). No obvious batch effects are observed when clustering cells from experiments 02- and 11- separately. An additional NMF analysis was performed using this subset of cells (ec_K79).\  
+To reduce the number of confounding effects we here consider cells from five selected libraries in the subclustering of ectodermal cells. Three libraries were collected on two consecutive days using ChemGenes beads and using *Hydra* culture medium in the dissociations (libraries 02-). Two additional libraries were collected on a single day using Biosearch beads and using *Hydra* dissociation medium to generate the cell suspensions (libraries 11-). No obvious batch effects are observed when clustering cells from experiments 02- and 11- separately. An additional NMF analysis was performed using this subset of cells (ec_K79).\  
 
 ## Clustering of cells {-}
 
-We first cluster the cells without any batch regression to evaluate library set specific effects. Cells from 02- libraries separate from cells from 11- libaries (Fig. \ref{fig:ectosclust}). We are able to integrate the two sets of cells following the approach described by Buttler et al. [@Butler:2018ex](Fig. \ref{fig:integrated}).\  
+We first cluster the cells without any batch regression to evaluate library set specific effects. Cells from 02- libraries separate from cells from 11- libraries (Fig. \ref{fig:ectosclust}). We are able to integrate the two sets of cells following the approach described by Buttler et al. [@Butler:2018ex](Fig. \ref{fig:integrated}).\  
 
 ```{r ectoclustering, cache.lazy = FALSE, message=F, warning=F, cache=TRUE, results='hide', fig.keep='none'}
 
@@ -112,7 +114,6 @@ ds.ec <- ProjectPCA(object = ds.ec)
 #ds.ec <- JackStraw(object = ds.ec, num.pc = 40, num.replicate = 100, do.print = FALSE)
 #JackStrawPlot(object = ds.ec, PCs=1:40)
 
-# Approximation of amount of variance encoded by each PC
 # Look at a plot of the standard deviations of the principle components and draw cutoff where there is a clear elbow in the graph.
 PCElbowPlot(object = ds.ec, num.pc = 40)
 
@@ -121,14 +122,14 @@ ds.ec <- FindClusters(object = ds.ec, reduction.type = "pca", dims.use = 1:14, f
 # Run t-SNE
 ds.ec <- RunTSNE(object = ds.ec, dims.use = c(1:14), do.fast = T)
 
-## Save object
-##saveRDS(ds.ec,"objects/ds.ec.pca_libr2_11.rds") 
+#Save object
+#saveRDS(ds.ec,"objects/ds.ec.pca_libr2_11.rds") 
 
 ```
 
-```{r ectosclust, fig.height = 8, fig.width = 16, cache.lazy = FALSE, cache=TRUE, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Clustering without batch regression reveals batch effects in epithelial cells of the ectodermal subset. A) t-SNE plot with clusters labeled. B) t-SNE plot with cells labeled by batch. Cells from libraries 02- separate from cells from libaries 11-."}
+```{r ectosclust, fig.height = 8, fig.width = 16, cache.lazy = FALSE, cache=TRUE, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Clustering without batch regression reveals batch effects in epithelial cells of the ectodermal subset. A) t-SNE plot with clusters labeled. B) t-SNE plot with cells labeled by batch. Cells from libraries 02- separate from cells from libraries 11-."}
 
-# Load object from original analysis
+# Load object from original analysis: 
 #ds.ec <- readRDS("objects/ds.ec.pca_libr2_11.rds")
 
 p1 <- TSNEPlot(object = ds.ec , group.by="res.0.6", do.return=T, do.label = T, no.legend=TRUE)
@@ -152,7 +153,7 @@ l11 <- c(p12, p13)
 l11 <- SubsetData(object = ds.ec, cells.use=l11, subset.raw=TRUE)
 l02 <- SubsetData(object = ds.ec, cells.use=l02, subset.raw=TRUE)
 
-# We consider cells with expressing a minimum of 500 genes
+# We consider cells expressing a minimum of 500 genes
 
 # Filter, normalize, scale
 l11@meta.data$stim <- "l11"
@@ -212,8 +213,8 @@ ds.ec.ss <- RunTSNE(ds.ec.ss, reduction.use = "cca.aligned", dims.use = 1:20,
 ds.ec.ss <- FindClusters(ds.ec.ss, reduction.type = "cca.aligned", 
                                resolution = 1.2, dims.use = 1:20)
 
-## Save object
-##saveRDS(ds.ec.ss,"objects/ds.ec.cca_l2_l11_int.rds")
+# Save object
+#saveRDS(ds.ec.ss,"objects/ds.ec.cca_l2_l11_int.rds")
 
 ```
 
@@ -249,11 +250,11 @@ ds.ec.ss@meta.data <- cbind(ds.ec.ss@meta.data,cellScores)
 
 ```
 
-```{r endodoublet, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Expression of endodermal epithelial cell metagene wt2 in ectodermal epithelial cells. A) t-SNE plot for all cells in the final data set. Metagene wt2 is expressed in endodermal epithelial cells. B) t-SNE plot for ectodermal epithelial cells with cells from cluster 12 receiving high scores for endodermal metagene wt2."}
+```{r endodoublet, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Expression of endodermal epithelial cell metagene wt2 in ectodermal epithelial cells. A) t-SNE plot for all cells in the transcriptome data set. Metagene wt2 is expressed in endodermal epithelial cells. B) t-SNE plot for ectodermal epithelial cells with cells from cluster 12 receiving high scores for endodermal metagene wt2."}
 
 p1 <- FeaturePlot(ds.s1, "wt2", cols.use = c("grey", "blue"), do.return=TRUE, no.legend = FALSE)
 p2 <- FeaturePlot(ds.ec.ss, "wt2", cols.use = c("grey", "blue"), do.return=TRUE, no.legend = FALSE)
-plot_grid(p1[[1]], p2[[1]], ncol=2, labels="AUTO", label_size = 20, align = "h")
+plot_grid(p1[[1]], p2[[1]], ncol=2, labels="AUTO", label_size = 24, align = "h")
 
 ```
 
@@ -262,6 +263,8 @@ plot_grid(p1[[1]], p2[[1]], ncol=2, labels="AUTO", label_size = 20, align = "h")
 ds.ec.ss <- SetAllIdent(ds.ec.ss, "res.1.2")
 # We remove cluster 12 and integrate as before
 ds.ec.ss <- SubsetData(object = ds.ec.ss, ident.remove= 12, subset.raw = TRUE)
+#save object for NMF K79
+#saveRDS(ds.ec.ss,"objects/ds.ec.cca1_10_12rm.rds")
 
 # Retrieve cell ids for each batch
 p3 <- rownames(ds.ec@meta.data)[ds.ec@meta.data[,"orig.ident"] == "02-CO"]
@@ -333,10 +336,9 @@ ds.ec.ss <- RunTSNE(ds.ec.ss, reduction.use = "cca.aligned", dims.use = 1:10,
 
 ds.ec.ss <- FindClusters(ds.ec.ss, reduction.type = "cca.aligned", 
                                resolution = 1.5, dims.use = 1:10)
-
 ```
 
-```{r integrated2, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Integrated cells from two sets of libraries after exclusion of suspected endoderm/ectoderm doublets. A) t-SNE plot with clusters labeled. B) t-SNE plot with cells labeled by batch. l02: libraries 02-, l11: libraries."}
+```{r integrated2, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Integrated cells from two sets of libraries after exclusion of suspected endoderm/ectoderm doublets. A) t-SNE plot with clusters. B) t-SNE plot with cells labeled by batch. l02: libraries 02-, l11: libraries."}
 
 #since t-SNE is not deterministic we here load the object of our original analysis
 #ds.ec.ss <- readRDS(paste0(data.path,"objects/ds.ec.cca_l2_l11_int_12rm.rds"))
@@ -347,8 +349,8 @@ ds.ec.ss <- SetAllIdent(object = ds.ec.ss, id = "cluster_numbering")
 # drop metagenes that had already been loaded
 ds.ec.ss@meta.data <- ds.ec.ss@meta.data[, -grep("^ec", colnames(ds.ec.ss@meta.data))]
 
-p1 <- TSNEPlot(ds.ec.ss, do.label = T, do.return = T, pt.size = 0.5)
-p2 <- TSNEPlot(ds.ec.ss, do.return = T, pt.size = 0.5, group.by = "stim")
+p1 <- TSNEPlot(ds.ec.ss, do.label = T, do.return = T, label.size = 6, pt.size = 0.5)
+p2 <- TSNEPlot(ds.ec.ss, do.return = T, pt.size = 0.5, label.size = 8, group.by = "stim")
 plot_grid(p1, p2, ncol=2, labels="AUTO", label_size = 20, align = "h")
 
 ```
@@ -414,14 +416,14 @@ plot_grid(plotlist= plotlist, ncol=3, labels="AUTO", label_size = 20, align = "h
 
 ## Subsetting - endodermal cells {-}
 
-We load the full data set, extract endodermal clusters but omit body column clusters that are also positive for nematoblast/nematocyte expression (Fig. \ref{fig:endosubset}). This subset was used to perfom non-negative matrix factorization (NMF) to identify gene expression modules expressed in endodermal epithelial cells (SA07_nmf.rmd, NMF analysis en_K40). We adjust the lower cut-offs for genes and UMIs to 500 and 2k, respectively, to consider only cells of high quality.\ 
+We load the full data set, extract endodermal clusters but omit body column clusters that are also positive for nematoblast/nematocyte expression (Fig. \ref{fig:endosubset}). This subset was used to perform non-negative matrix factorization (NMF) to identify gene expression modules expressed in endodermal epithelial cells (SA07_nmf.rmd, NMF analysis en_K40). We adjust the lower cut-offs for genes and UMIs to 500 and 2k, respectively, to consider only cells of high quality.\ 
 
 ```{r endosubset, fig.height = 8, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Subset of endodermal cells. A) t-SNE plot for all cells in the data set. B) Endodermal clusters."}
 
 # Read data object
 ds.s1 <- readRDS("objects/Hydra_Seurat_Whole_Transcriptome.rds")
 
-## Suspected doublet cluster db (68 cells) was excluded from from downstream analyses
+# Suspected doublet cluster db (68 cells) was excluded from from downstream analyses
 ds.s1 <- SubsetData(object = ds.s1, ident.remove= c("db"), subset.raw = TRUE)
 
 # Run this to restore original cluster numbering
@@ -430,12 +432,12 @@ ds.s1 <- SetAllIdent(object = ds.s1, id = "cluster_numbering")
 # Endodermal cluster without nematocyte doublet cluster
 ds.en <- SubsetData(object = ds.s1, ident.use=c("0","4","6","7","11","23"), subset.raw = TRUE)
 
+# Save object for NMF analysis
+#saveRDS(ds.en,"objects/ds.en.rds"))
+
 # There are a few cells that are assigned to the endodermal clusters but group with interstitial cells
 ## These cells were identified them using the do.identify argument in function TSNEPlot() and were subsequently excluded.
 #select.cells <- TSNEPlot(object = ds.en, do.identify = TRUE)
-#> select.cells
-#[1] "11-PO_TTAAGTAGGGCG" "01-D1_CTGGCGCAGATC" "02-CO_GATGCAGTCATG" "02-P1_TACCCTTCTTAN" "02-P1_CCCCCCAGTGCC" "03-KI_ATGTGAGTTGCA" "03-KI_CAAGTATTCCCC" #"03-KI_ATTCGAGACGCG"
-#[9] "06-FM_TTTCGGCGGTTC"
 
 # Load cell ids to be excluded
 select.cells <- c("11-PO_TTAAGTAGGGCG","01-D1_CTGGCGCAGATC","02-CO_GATGCAGTCATG","02-P1_TACCCTTCTTAN","02-P1_CCCCCCAGTGCC","03-KI_ATGTGAGTTGCA","03-KI_CAAGTATTCCCC","03-KI_ATTCGAGACGCG","06-FM_TTTCGGCGGTTC")
@@ -459,7 +461,7 @@ plot_grid(p1, p2, ncol=2, labels="AUTO", label_size = 20, align = "h")
 
 ## Clustering of cells {-}
 
-We cluster the cells after regressing out the library (batch) as source of variation by using the vars.to.regress argument in the Seurat function ScaleData(). Coloring cells by batch reveals clusters (8, 10) that are composed of cells originating exclusively from a specific set of libraries (01- through 03-)  (Fig. \ref{fig:tsneen19} A-C). We evaluate NMF metagenes to get insights into transcriptional signatures of cells within these clusters. We load the scores for metagenes identified when performing NMF on all cells (wt_K96) and when using the subset of endodermal cells (en_K40). For metagene en19 expression we find a strong relation with batch origin (Fig. \ref{fig:tsneen19} D). We exclude cells positive for metagene en19 expression. NMF analysis of endodermal cells also reveals neuronal gene expression within cells of the endodermal subset (Fig. \ref{fig:tsneen36}). High scoring genes of metagene en36 include LWamide and a sequence with similarity to RFamide. Neuronal expression is not random suggesting integrated neurons, phagocytotic activity or dissociation doublets as possible sources. We want to retain these cells with partial neuronal signatures for interrogation since they may provide spatial information, but do not want neuronal genes to play a role when clustering the cells. We therefore remove the neuronal genes of metagene en36 from the list of variable genes considered when calculating principal components pior to subclustering (object used for lineage plot: Hydra_Seurat_Endo_lineage_plot.rds) (Fig. \ref{fig:tsneen36var}). We, however, exclude these cells prior to URD trajectory reconstruction (object used for URD trajectory reconstruction: Hydra_Seurat_Endo.rds).\
+We cluster the cells after regressing out the library (batch) as source of variation by using the vars.to.regress argument in the Seurat function ScaleData(). Coloring cells by batch reveals clusters (8, 10) that are composed of cells originating exclusively from a specific set of libraries (01- through 03-)  (Fig. \ref{fig:tsneen19} A-C). We evaluate NMF metagenes to get insights into transcriptional signatures of cells within these clusters. We load the scores for metagenes identified when performing NMF on all cells (wt_K96) and when using the subset of endodermal cells (en_K40). For metagene en19 expression we find a strong relation with batch origin (Fig. \ref{fig:tsneen19} D). We exclude cells positive for metagene en19 expression. NMF analysis of endodermal cells also reveals neuronal gene expression within cells of the endodermal subset (Fig. \ref{fig:tsneen36}). High scoring genes of metagene en36 include LWamide and a sequence with similarity to RFamide. Neuronal expression is not random suggesting integrated neurons, phagocytic activity or dissociation doublets as possible sources. We want to retain these cells with partial neuronal signatures for interrogation since they may provide spatial information, but do not want neuronal genes to play a role when clustering the cells. We therefore remove the neuronal genes of metagene en36 from the list of variable genes considered when calculating principal components prior to subclustering (object used for lineage plot: Hydra_Seurat_Endo_lineage_plot.rds) (Fig. \ref{fig:tsneen36var}). We, however, exclude these cells prior to URD trajectory reconstruction (object used for URD trajectory reconstruction: Hydra_Seurat_Endo.rds).\
 
 ```{r endoclustering, cache.lazy = FALSE, cache=TRUE, results='hide', message=F, warning=F, fig.keep='none'}
 
@@ -475,12 +477,11 @@ ds.en <- RunPCA(object = ds.en, pc.genes = ds.en@var.genes, pcs.compute = 40, do
 # Project PCA
 ds.en <- ProjectPCA(object = ds.en)
 
-##determine statistically significant PCs
+#determine statistically significant PCs
 #ds.en <- JackStraw(object = ds.en, num.pc = 40, num.replicate = 100, do.print = FALSE)
 #JackStrawPlot(object = ds.en, PCs=1:40)
 
-# Approximation of amount of variance encoded by each PC
-# Look at a plot of the standard deviations of the principle components and draw cutoff where there is a clear elbow in the graph.
+# Approximate amount of variance encoded by each PC
 PCElbowPlot(object = ds.en, num.pc = 40)
 
 ds.en <- FindClusters(object = ds.en, reduction.type = "pca", dims.use = 1:14, force.recalc = TRUE, resolution = 1.2, print.output = 0)
@@ -496,7 +497,7 @@ TSNEPlot(object = ds.en , group.by="orig.ident", do.return=T, do.label = T)
 ```{r nmf, cache.lazy = FALSE, cache=TRUE, results='hide', message=F, warning=F, fig.keep='none'}
 
 # Load object from original analysis
-#ds.en <- readRDS("objects/ds.en.orig.ident.pc14.rds")
+ds.en <- readRDS("objects/ds.en.orig.ident.pc14.rds")
 
 # Load NMF cell scores
 
@@ -542,7 +543,7 @@ ds.en@meta.data <- cbind(ds.en@meta.data,cellScores)
 
 ```
 
-```{r tsneen19, fig.height = 16, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Endodermal cluster exploration. A) t-SNE plot for the endodermal epithelial cell subset. B) t-SNE plot with cells colored by batch. C) t-SNE representation highlighting batches generated using *Hydra* culture medium (grey) or isotonic *Hydra* dissociation medium (blue). D) Metagene en19 is expressed in a subset of cells from libraries 01- through 03-."}
+```{r tsneen19, fig.height = 16, fig.width = 16, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Endodermal cluster exploration. A) t-SNE plot for the endodermal epithelial cell subset. B) t-SNE plot with cells colored by batch. C) t-SNE representation highlighting batches generated using Hydra culture medium (grey) or isotonic Hydra dissociation medium (blue). D) Metagene en19 is expressed in a subset of cells from libraries 01- through 03-."}
 
 # Metagene en19 plot
 p1 <- TSNEPlot(object = ds.en , group.by="res.1.2", do.return=T, do.label = T, no.legend=TRUE)
@@ -566,18 +567,30 @@ plot_grid(p1, p2[[1]], ncol=2, labels="AUTO", label_size = 30, align = "h")
 
 ```{r exclude}
 
-# For trajectory analysis
-# Removed cells positive for metagenes en19 and en36 
+# Object for trajectory analysis
+
+# We remove cells positive for metagenes en19 and en36 
 ds.en.s1.tr <- SubsetData(object = ds.en, subset.name="en19", accept.high=0.2, subset.raw = TRUE)
-ds.en.s1.tr <- SubsetData(object = ds.en, subset.name="en36", accept.high=0.2, subset.raw = TRUE)
+ds.en.s1.tr <- SubsetData(object = ds.en.s1.tr, subset.name="en36", accept.high=0.2, subset.raw = TRUE)
+
+# Cluster the cells as before
+#ds.en.s1.tr <- ScaleData(object = ds.en.s1.tr, vars.to.regress = "orig.ident")
+#ds.en.s1.tr <- RunPCA(object = ds.en.s1.tr, pc.genes = ds.en.s1@var.genes, pcs.compute = 40, do.print = TRUE, pcs.print = 1:5, 
+#                   genes.print = 20)
+#ds.en.s1.tr <- ProjectPCA(object = ds.en.s1.tr)
+#PCElbowPlot(object = ds.en.s1.tr, num.pc = 40)
+#ds.en.s1.tr <- FindClusters(object = ds.en.s1.tr, reduction.type = "pca", dims.use = 1:10, force.recalc = TRUE, resolution = 1.2, #print.output = 0)
+
 # Save object for URD analysis
+
 #saveRDS(ds.en.s1.tr,"objects/Hydra_Seurat_Endo.rds"))
 
 ```
 
-```{r cluster2, cache.lazy = FALSE, cache=TRUE, results='hide', message=F, warning=F, results='hide', fig.keep='none'}
+```{r cluster2, cache.lazy = FALSE, cache=TRUE, message=F, warning=F, results='hide', fig.keep='none'}
 
-# For lineage plot
+# Object for lineage plot
+
 # We want to keep the neuronal cell doublets in the data set but do not want them to play a role in the clustering.
 
 # Remove cells positive for metagene en19 - batch specific cluster
@@ -615,7 +628,7 @@ ds.en.s1 <- RunTSNE(object = ds.en.s1, dims.use = c(1:10), do.fast = T)
 
 ```
 
-```{r tsneen36var, fig.height = 8, fig.width = 24, cache.lazy = FALSE, cache=TRUE, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Neuron specific expression in endodermal epithelial cells after adjusting variable gene considered in PCA. A) t-SNE plot for the endodermal epithelial cell subset. B) Top 30 genes for metagene en36 were removed from the list of variable genes considered when calculating principal components. Cells positive for metagene en36 no longer cluster with each other. C) Expression of neuron specific gene LWamide in cells of the endodermal subsets indicating multiplets."}
+```{r tsneen36var, fig.height = 8, fig.width = 24, cache.lazy = FALSE, cache=TRUE, message=F, warning=F, fig.keep='last', fig.align='center', fig.cap= "Neuron specific expression in endodermal epithelial cells after adjusting the set of variable genes considered in PCA. A) t-SNE plot for the endodermal epithelial cell subset. B) Top 30 genes for metagene en36 were removed from the list of variable genes considered when calculating principal components. Cells positive for metagene en36 no longer cluster with each other. C) Expression of neuron specific gene LWamide in cells of the endodermal subsets indicating multiplets."}
 
 # Load object from original analysis
 ds.en.s1 <- readRDS("objects/Hydra_Seurat_Endo_lineage_plot.rds")

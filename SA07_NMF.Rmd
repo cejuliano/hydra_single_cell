@@ -1,6 +1,7 @@
 ---
-title: "Drop-Seq NMF Analysis"
+title: "SA07 - Drop-Seq NMF Analysis"
 author: "Jack Cazet"
+date: "October 15, 2018, updated on July 8, 2019"
 header-includes: #allows you to add in your own Latex packages
 - \usepackage{float} #use the 'float' package
 - \floatplacement{figure}{H} #make every figure with caption = h
@@ -355,7 +356,7 @@ One of the easiest and often most informative ways of evaluating metagenes is to
 ```{r Metagene Plots, fig.width=10, fig.height=10, fig.cap="The first nine metagenes"}
 #add cell scores to metadata in the seurat object
 
-ds.ds <- readRDS("objects/ds.en.s1.orig.ident.pc10_rm19_rm36g_cl10.rds")
+ds.ds <- readRDS("objects/Hydra_Seurat_Endo_lineage_plot.rds")
 
 #invert cellscores
 t.goodCellScores <- as.data.frame(t(goodCellScores))
