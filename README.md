@@ -2,15 +2,19 @@
 
 ## Introduction
 
-This repository contains the code and analyses associated with a single-cell RNAseq analysis of homeostatic Hydra. This work is presented in the following bioarxiv preprint:
+This repository contains the code and analyses associated with a single-cell RNAseq study of homeostatic Hydra presented in the following manuscript: 
 
->Siebert S, Farrell JA, Cazet J, Abeykoon Y, Primack AS, Schnitzler CE, Juliano CE (2018) Stem cell differentiation trajectories in Hydra resolved at single cell resolution. [https://doi.org/10.1101/460154](https://www.biorxiv.org/content/early/2018/11/03/460154)
+>Siebert S, Farrell JA, Cazet JF, Abeykoon Y, Primack AS, Schnitzler CE, Juliano CE (2019) Stem cell differentiation trajectories in Hydra resolved at single-cell resolution. Science 365, eaav9314. [https://doi.org/10.1126/science.aav9314](https://doi.org/10.1126/science.aav9314)
+
+This work was initially presented in the following bioRxiv preprint: [https://doi.org/10.1101/460154](https://www.biorxiv.org/content/early/2018/11/03/460154)
+
+The preprint analysis is available as release “Preprint v1” posted on November 3, 2018.
 
 ![Figure 1](https://raw.githubusercontent.com/cejuliano/hydra_single_cell/master/SA_figures/Hydra_single_cell.jpg)
 
 The repository includes a number of files needed to recreate these analyses. UMI count matrices (for transcriptome and genome mapped Drop-seq reads) and isoform level expression estimates for epithelium specific gene expression can be downloaded at the GEO repository; accession GSE121617.
 
-The transcriptome and the genome can be accessed, searched via blast and downloaded at https://research.nhgri.nih.gov/hydra/.
+The transcriptome and the genome can be accessed, searched via blast and downloaded at https://research.nhgri.nih.gov/hydra/sequenceserver/. It is also available as Transcriptome Shotgun Assembly project: GHHG00000000, version, GHHG01000000.
 
 ATAC-seq data are available as tracks at https://research.nhgri.nih.gov/hydra/.
 
@@ -20,9 +24,13 @@ Single cell data are available in a browsable format at:
 
 https://portals.broadinstitute.org/single_cell/study/stem-cell-differentiation-trajectories-in-hydra-resolved-at-single-cell-resolution
 
+Selected/final R analysis objects are available from the single-cell portal and from the Dryad Digital Repository: https://doi.org/10.5061/dryad.v5r6077.
+
+## Description of files in the repository:
+
 ## Code
 
-Description of files in the repository (also available as knitted pdfs):
+R Markdown documents with analysis code (also available as knitted pdfs).
 
 `SA01_ClustTranscriptomePermissive.Rmd`  
  - Initial clustering, gene/UMI cut-off decision
@@ -74,13 +82,21 @@ Description of files in the repository (also available as knitted pdfs):
 
 ## Additional files
 
+The repository also includes the following files:
+
+`Plotting Hydra data in URD`
+ - Tutorial showing how to visualize gene expression on trajectories. URD analysis objects are available for download from the Broad Single-cell Portal or from the Dryad Digital Repository: https://doi.org/10.5061/dryad.v5r6077. This tutorial is available as R Markdown document and as knitted html document.
+
+`MotifEnrichmentTable.xlsx`
+ - In supplemental table S5 of the manuscript we provide a list of metagenes with associated enriched motifs and candidate key regulators. The content of this table depends on the correlation cutoff used (measure of correlation between expression domains of metagene and putative regulator), with higher cutoffs leading to a more stringent list, but with the tradeoff of possibly missing regulators. Table S5 uses a more stringent correlation cutoff (0.3). We here provide a more extensive list (correlation cutoff of 0.1) for further exploration. 
+
 The respository also includes the following folders:
 
 #### `nmf/`
 
 Contains Non-negative matrix factorization (NMF) results for different sets of cells. Provided are cell and gene scores for metagenes with strong cell-type signatures (“good metagenes") and metagenes with more general cell state or technical signature (“bad metagenes”). Also provided are the 30 highest scoring genes for each metagene.
  - ec_K76	- NMF for subset of all ectodermal epithelial cells
- - ec_K79	- NMF for subset of ectodermal epithelial cells considered in sublcustering
+ - ec_K79	- NMF for subset of ectodermal epithelial cells considered in the subcluster analysis (epithelial cell – nematocyte doublets were excluded)
  - en_K40	- NMF for subset of all ectodermal epithelial cells
  - ic_K75	- NMF for subset of cells from the interstitial lineage
  - wg_K84 - NMF for whole dataset (genome mapped reads)
@@ -125,3 +141,4 @@ Many steps of URD involve simulations, which are non-deterministic. Thus, we inc
 - `spumous-flood-dmg75-rootI20_3.rds` - 'Flood' simulations for determining pseudotime in the spumous mucous cells
 - `zymogen-flood-dmg75-rootI20_10.rds` - 'Flood' simulations for determining pseudotime in the granular mucous and zymogen gland cells (beginning at cluster 10)
 - `zymogen-flood-dmg75-rootI20_11.rds` - 'Flood' simulations for determining pseudotime in the granular mucous and zymogen gland cells (beginning at cluster 11)
+
