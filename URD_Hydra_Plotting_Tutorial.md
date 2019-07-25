@@ -100,7 +100,7 @@ Gene expression can be plotted on URD tree objects using the command `plotTree`.
 plotTree(interstitial, "t2163aep|COMA_CONMA")
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-5-1.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-5-1.png)
 
 Plotting a single gene, discretized
 -----------------------------------
@@ -111,7 +111,7 @@ Gene expression can be 'discretized' by comparing to a threshold and simply labe
 plotTreeDiscretized(interstitial, "t2163aep|COMA_CONMA", label.min=0.1, label.max=Inf)
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-6-1.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-6-1.png)
 
 Plotting expression of multiple genes, continuous values
 --------------------------------------------------------
@@ -122,7 +122,7 @@ The gene expression values for two genes can be plotted on the same tree to comp
 plotTreeDual(interstitial, "t2163aep|COMA_CONMA", "t12562aep|ASCL4_HUMAN")
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-7-1.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-7-1.png)
 
 Plotting expression of multiple genes, discretized values
 ---------------------------------------------------------
@@ -133,7 +133,7 @@ Additionally, multiple genes can be plotted together in a discretized fashion us
 plotTreeDiscretized(interstitial, c("t8891aep|INX3_DROME", "t11055aep|LWA_HYDEC"), label.min = c(2.5, 2.5), label.max=c(Inf, Inf))
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-8-1.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-8-1.png)
 
 Plotting gene modules
 ---------------------
@@ -144,13 +144,13 @@ Additionally, the expression of NMF gene modules described in the manuscript can
 plotTree(interstitial, "ic7")
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-9-1.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-9-1.png)
 
 ``` r
 plotTreeDual(interstitial, "ic7", "ic49")
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-9-2.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-9-2.png)
 
 The full collection of modules available can be retrieved using this command:
 
@@ -184,7 +184,7 @@ The `plotSmoothFit` function is appropriate for use with the **male.splines**, *
 plotSmoothFit(granular.zymogen.splines, "t22116aep|ETV1_MOUSE")
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-11-1.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-11-1.png)
 
 It can also be provided with a vector of genes to generate either a plot with several curves in different colors, or a panelled plot of single genes (configured using the **multiplot** parameter, as shown below).
 
@@ -192,13 +192,13 @@ It can also be provided with a vector of genes to generate either a plot with se
 plotSmoothFit(granular.zymogen.splines, c("t34999aep|SRBP1_PIG", "t22116aep|ETV1_MOUSE", "t5528aep|SX21B_DANRE", "t20911aep|UNC4_CAEEL"))
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-12-1.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-12-1.png)
 
 ``` r
 plotSmoothFit(granular.zymogen.splines, c("t34999aep|SRBP1_PIG", "t22116aep|ETV1_MOUSE", "t5528aep|SX21B_DANRE", "t20911aep|UNC4_CAEEL"), multiplot=T)
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-12-2.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-12-2.png)
 
 Multi-segment splines
 ---------------------
@@ -209,13 +209,13 @@ The `plotSmoothFitMultiCascade` function is appropriate for use with the **ectod
 plotSmoothFitMultiCascade(endoderm.splines, "t35005aep|CHRD_XENLA")
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-13-1.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-13-1.png)
 
 ``` r
 plotSmoothFitMultiCascade(ectoderm.splines, c("t11061aep|APCD1_CHICK", "t35005aep|CHRD_XENLA", "t2948aep|EGL4_CAEEL"), ncol = 1)
 ```
 
-![](URD_Hydra_Plotting_Tutorial_GH_files/figure-markdown_github/unnamed-chunk-13-2.png)
+![](URD_Hydra_Plotting_Tutorial_files/figure-markdown_github/unnamed-chunk-13-2.png)
 
 Going farther
 =============
