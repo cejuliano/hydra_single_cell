@@ -1,7 +1,7 @@
 ---
 title: "SA15: Hydra URD Male Germline (Genome)"
 author: "Jeff Farrell"
-date: "October 1, 2018"
+date: "October 1, 2018, updated March 19, 2019"
 linestretch: 0.5
 output:
  pdf_document:
@@ -26,12 +26,6 @@ main.path <- "~/Dropbox/HydraURDSubmission/"
 
 # Build output directory
 dir.create(paste0(main.path, "URD/MaleGenome/"), recursive=T)
-```
-
-```{r next-version, include=F}
-# Load functions that will be in URD 1.1 release
-source("~/URD/URD/ForFuture/NMFDoublets.R")
-source("~/URD/URD/ForFuture/geneLowess.R")
 ```
 
 # Load data
@@ -152,7 +146,7 @@ plotDim(hydra.male, "pseudotime", reduction.use="dm")
 
 # Find genes that vary in pseudotime
 
-To find the genes that vary in pseudotime (i.e. that are differential in the male germline as it differentiates), we group cells 5 at a time and calculate a spline curve that fits the mean expression (vs. pseudotime) of each group of 5 cells. We then consider those genes spatially varying that are: (1) expressed (present in at least 1% of cells, mean expression spline curve > 0.5 at some point), (2) vary significantly (their spline curve varies at least 33%), (3) are well fit (noise is usually poorly fit, here we threshold on the sum of squared residuals).
+To find the genes that vary in pseudotime (i.e. that are differential in the male germline as it differentiates), we group cells 5 at a time and calculate a spline curve that fits the mean expression (vs. pseudotime) of each group of 5 cells. We then consider those genes varying that: (1) are well fit (noise is usually poorly fit, here we threshold on the sum of squared residuals), (2) vary significantly (their spline curve changes at least 0.5 in actual expression and their spline curve varies 30-40% depending on tight the fit is), and (3) are fit significantly better by the spline curve than a straight line with slope 0.
 
 ## Calculate varying genes
 
@@ -164,21 +158,32 @@ expressed.genes <- names(frac.exp)[which(frac.exp > 0.01)]
 # Calculate spline fit
 expressed.spline.5cell <- geneSmoothFit(hydra.male, method="spline", pseudotime="pseudotime", cells = colnames(hydra.male@logupx.data), genes = expressed.genes, moving.window = 1, cells.per.window = 5, spar=0.875) #.875 previously
 
-# Which genes have a spline curve that crosses 0.5?
-max.mean.spline.5cell <- apply(expressed.spline.5cell$mean.smooth, 1, max)
-genes.wellexp.5cell <- names(which(max.mean.spline.5cell > 0.5))
+# Which genes change in their actual mean expression value by at least 0.5?
+spline.change.real <- apply(expressed.spline.5cell$mean.smooth, 1, function(x) diff(range(x)))
+genes.change.real <- names(which(spline.change.real >= 0.5))
 
-# Look at how good the spline fits are
+# Which genes are well fit by the spline curves? (Noise is usually poorly fit by a curve)
 spline.fit.5cell <- apply(expressed.spline.5cell$scaled.smooth - expressed.spline.5cell$scaled.expression.red, 1, function(i) sum(i^2))
 spline.fit.norm.5cell <- spline.fit.5cell / ncol(expressed.spline.5cell$scaled.expression.red)
 genes.wellfit.5cell <- names(which(spline.fit.norm.5cell <= 0.06))
 
-# Which genes change in their scaled log2 mean expression value by at least 33%?
+# Which genes change in their scaled log2 mean expression value sufficiently?
+# At least 30%, and requiring more change (up to 40%) as the data is less well fit
+# by its spline curve.
 change.scale.5cell <- apply(expressed.spline.5cell$scaled.smooth, 1, function(x) diff(range(x)))
-genes.scale.5cell <- names(which(change.scale.5cell >= 0.33))
+genes.scale.5cell <- names(which(change.scale.5cell >= spline.fit.norm.5cell * .10/0.06 + 0.3))
+
+# Ensure that genes are fit by the spline curve significantly better than a flat line of slope 0.
+# (Weighted by distance to next point in pseudotime to compensate for point density)
+w <- ncol(expressed.spline.5cell$scaled.smooth) - 1
+weight <- diff(as.numeric(colnames(expressed.spline.5cell$scaled.smooth))) * 1000
+spline.fit.weighted <- apply(expressed.spline.5cell$scaled.smooth[,1:w] - expressed.spline.5cell$scaled.expression.red[,1:w], 1, function(i) sum(weight * i^2))
+spline.flat.fit.weighted <- apply(expressed.spline.5cell$scaled.expression.red[,1:w], 1, function(x) sum(weight * (x - mean(x))^2))
+spline.fit.ratio <- log2(spline.flat.fit.weighted / spline.fit.weighted)
+spline.fit.betterthanflat <- names(which(spline.fit.ratio > 0.19))
 
 # Take the intersection of those genes and use them in the heatmap & analysis
-varying.genes.5cell <- intersect(intersect(genes.wellexp.5cell, genes.scale.5cell), genes.wellfit.5cell)
+varying.genes.5cell <- intersect(intersect(intersect(genes.change.real, genes.scale.5cell), genes.wellfit.5cell), spline.fit.betterthanflat)
 ```
 
 ## Spline plots
@@ -192,41 +197,129 @@ plotSmoothFit(expressed.spline.5cell, genes = genes.spline.plot, scaled = T)
 
 ## Heatmaps
 
+### Heatmap of all significantly spatially varying genes
+
 Finally, we can make heatmaps of the expression of all of the genes that we found to vary spatially. These we save as PDF output because they do not perform well inside of R Markdown.
 
-```{r}
+```{r heatmap-overview}
 # Heatmap Basics
 cols <- scales::gradient_n_pal(RColorBrewer::brewer.pal(9, "YlOrRd"))(seq(0,1,length.out = 50))
 
-# Get the scaled data, z-score it, and set values <0 to 0, the hierarchical cluster.
-# This emphasizes clustering on regions of peak expression for a gene.
-se <- expressed.spline.5cell$scaled.expression[varying.genes.5cell,]
-se.sd <- apply(se, 1, sd)
-se.mean <- apply(se, 1, mean)
-se.z <- sweep(sweep(se, 1, se.mean, "-"), 1, se.sd, "/")
-se.z[se.z < 0] <- 0
-h.sez <- as.dendrogram(hclust(dist(se.z)))
+# Reduce the data in the splines, such that each block is minimum 0.01
+# pseudotime; in this case, each block will be >= 5 cells, >= pseudotime 0.01
+s <- expressed.spline.5cell
+colnames(s$mean.expression) <- as.character(round(as.numeric(colnames(s$mean.expression)), digits=2))
+s$mean.expression <- matrixReduce(s$mean.expression)
+colnames(s$mean.smooth) <- as.character(round(as.numeric(colnames(s$mean.smooth)), digits=2))
+s$mean.smooth <- matrixReduce(s$mean.smooth)
 
-# Find a 'peak pseudotime' for each gene by taking the weighted average of
-# each window's pseudotime, weighted by the expression z-score (>0) within it
-pt.wm <- apply(se.z, 1, function(w) {
-  weighted.mean(x=as.numeric(colnames(se.z)), w=w)
-})
+# Re-scale spline curves min/max for the heatmap
+ss <- sweep(s$mean.smooth, 1, apply(s$mean.smooth, 1, min), "-")
+ss <- sweep(ss, 1, apply(ss, 1, max), "/")
 
-# Make some heatmaps
-row.font.size=0.06
-pdf(paste0(main.path, "URD/MaleGenome/MaleGenome-Varying.pdf"), width=25.5, height=33)
-gplots::heatmap.2(as.matrix(se), Rowv=reorder(h.sez, max(pt.wm)-pt.wm, agglo.FUN=median), Colv=F, dendrogram="none", col=cols, trace="none", density.info="none", key=F, cexCol=0.8, cexRow=row.font.size, margins = c(5,8), lwid=c(0.3,4), lhei=c(0.4, 4), labCol=NA)
-title("Male Germline (Genome, Pseudotime)", line=-1, adj=0.48, cex.main=4)
+# Hierarchical cluster based on smoothed expression
+h.ss <- hclust(dist(as.matrix(ss[varying.genes.5cell,])), method = "ward.D2")
+h.ss.d <- as.dendrogram(h.ss)
+k=15 # Cluster number chosen by eye.
+h.ss.clust <- cutree(h.ss, k=k)
+
+# Get cluster order as it will be in the heatmap
+clust.order <- unique(h.ss.clust[h.ss$order])
+h.ss.clust.ord <- plyr::mapvalues(from=clust.order, to=1:k, x = h.ss.clust)
+
+# Generate cluster color vector
+cluster.h <- seq(0,1,length.out=k+1)
+cluster.s <- rep(c(1, 0.75), length=k)
+cluster.v <- rep(c(1, 0.75), length=k)
+cluster.colors <- hsv(h=cluster.h[1:k], s=cluster.s, v=cluster.v)
+h.ss.clust.col <- plyr::mapvalues(from=as.character(1:k), to=cluster.colors, x=h.ss.clust.ord)
+
+# Generate the actual heatmap and save as a PDF.
+pdf(paste0(main.path, "URD/MaleGenome/MaleGenome-Varying.pdf"), width=17, height=22)
+# Plot the heatmap
+gplots::heatmap.2(
+  x = as.matrix(ss[varying.genes.5cell[h.ss$order],]), Rowv=F, RowSideColors=h.ss.clust.col[h.ss$order], Colv=F, dendrogram="none", col=cols, trace="none", density.info="none", key=F, cexCol=0.8, cexRow=0.08, margins = c(8,8), lwid=c(0.3,4), lhei=c(0.3, 4), labCol=NA)
+# Put a title on it
+title("Male Germline (Genome) Expression", line=-1, adj=0.48, cex.main=4)
+# Add tissue labels to bottom
+title("Early", line=-103, adj=0.08, cex.main=2)
+title("Late", line=-103, adj=0.95, cex.main=2)
+dev.off()
+```
+
+### Heatmap cluster expression profiles
+
+We clustered the expression of these spatially varying genes in order to describe the overall common spatial expression patterns.
+
+```{r heatmap-cluster-profiles}
+# Make a spline object that aggregates the expression of genes from each cluster as their mean
+
+# Make fake spline object by running aggregate on all its slots
+so <- expressed.spline.5cell
+# Aggregate by mean across clusters
+so$scaled.expression <- stats::aggregate(s$scaled.expression[varying.genes.5cell,], by=list(h.ss.clust.ord[varying.genes.5cell]), FUN=mean)
+# Rename rows to add a leading 0 to 1-9 so ggplot2 will sort correctly
+rownames(so$scaled.expression) <- sprintf("%02d",as.numeric(rownames(so$scaled.expression)))
+so$mean.expression <- stats::aggregate(s$mean.expression[varying.genes.5cell,], by=list(h.ss.clust.ord[varying.genes.5cell]), FUN=mean)
+rownames(so$mean.expression) <- sprintf("%02d",as.numeric(rownames(so$mean.expression)))
+so$scaled.smooth <- stats::aggregate(s$scaled.smooth[varying.genes.5cell,], by=list(h.ss.clust.ord[varying.genes.5cell]), FUN=mean)
+rownames(so$scaled.smooth) <- sprintf("%02d",as.numeric(rownames(so$scaled.smooth)))
+so$mean.smooth <- stats::aggregate(s$mean.smooth[varying.genes.5cell,], by=list(h.ss.clust.ord[varying.genes.5cell]), FUN=mean)
+rownames(so$mean.smooth) <- sprintf("%02d",as.numeric(rownames(so$mean.smooth)))
+so$mean.expression.red <- stats::aggregate(s$mean.expression.red[varying.genes.5cell,], by=list(h.ss.clust.ord[varying.genes.5cell]), FUN=mean)
+rownames(so$mean.expression.red) <- sprintf("%02d",as.numeric(rownames(so$mean.expression.red)))
+so$scaled.expression.red <- stats::aggregate(s$scaled.expression.red[varying.genes.5cell,], by=list(h.ss.clust.ord[varying.genes.5cell]), FUN=mean)
+rownames(so$scaled.expression.red) <- sprintf("%02d",as.numeric(rownames(so$scaled.expression.red)))
+
+# Plot expression profiles of each cluster
+pdf(paste0(main.path, "URD/MaleGenome/MaleGenome-Cluster-Profiles.pdf"), width=8.5, height=11)
+plotSmoothFit(so, sort(rownames(so$mean.expression)), scaled = T, plot.data=T, multiplot = T) + ggtitle("Male Germline (Genome) Cluster Expression Profiles") + ylim(0,1)
+dev.off()
+```
+
+### "Zoom-in" heatmaps
+
+We also present a zoom-in of the spatial expression heatmaps for readability.
+
+```{r heatmap-clusters}
+## Make booklet of heatmaps for each cluster
+
+# Choose clusters for each page
+cluster.ends <- c(2, 5, 7, 9, 11, 13, 15)
+cluster.starts <- c(1, head(cluster.ends, -1) + 1)
+
+pdf(paste0(main.path, "URD/MaleGenome/MaleGenome-Cluster-Heatmaps.pdf"), width=17, height=22)
+for (c in 1:length(cluster.ends)) {
+  # Which clusters to put in this heatmap
+  c.use <- cluster.starts[c]:cluster.ends[c]
+  # Determine which rows to plot
+  rp <- h.ss$order[which(h.ss.clust.ord[h.ss$order] %in% c.use)]
+  # Make the heatmap
+  gplots::heatmap.2(
+  x = as.matrix(ss[varying.genes.5cell[rp],]), Rowv=F, RowSideColors=h.ss.clust.col[rp], Colv=F, dendrogram="none", col=cols, trace="none", density.info="none", key=F, cexCol=0.8, cexRow=0.75, margins = c(8,15), lwid=c(0.3,4), lhei=c(0.3, 4), labCol=NA)
+  # Put a title on it
+  title(paste0("Male Germline (Genome): Clusters ", cluster.starts[c], " to ", cluster.ends[c]), line=-1, adj=0.48, cex.main=4)
+  # Add tissue labels to bottom
+  title("Early", line=-103, adj=0.075, cex.main=2)
+  title("Late", line=-103, adj=0.9, cex.main=2)
+}
 dev.off()
 ```
 
 # Save results
 
 ``` {r save-results}
-# Save the results
+# Make data frame of genes and their cluster identities
+write.table(
+  data.frame(
+    gene=varying.genes.5cell[rev(h.ss$order)],
+    cluster=h.ss.clust.ord[rev(h.ss$order)]
+  ),
+  quote=F, row.names=F, sep="\t",
+  file=paste0(main.path, "URD/MaleGenome/MaleGenome-Genes-Varying.txt")
+)
+# Save objects
 saveRDS(expressed.spline.5cell, file=paste0(main.path, "URD/MaleGenome/Splines-MaleGenome.rds"))
-write(varying.genes.5cell, file=paste0(main.path, "URD/MaleGenome/Genes-MaleGenome-Varying.txt"))
 saveRDS(hydra.male, file=paste0(main.path, "URD/MaleGenome/Hydra_URD_MaleGenome.rds"))
 ```
 

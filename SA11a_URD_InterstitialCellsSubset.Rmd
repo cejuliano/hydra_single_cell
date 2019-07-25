@@ -27,11 +27,6 @@ opts_chunk$set(root.dir="~/Dropbox/HydraURDSubmission/")
 main.path <- "~/Dropbox/HydraURDSubmission/"
 ```
 
-```{r next-version, include=F}
-# Load functions that will be in URD 1.1 release
-source("~/URD/URD/ForFuture/NMFDoublets.R")
-```
-
 # Load Stefan's Seurat data and convert to URD
 
 ```{r load-data}

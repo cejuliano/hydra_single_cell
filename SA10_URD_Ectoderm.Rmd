@@ -1,7 +1,7 @@
 ---
 title: "SA10: Hydra URD Ectoderm"
 author: "Jeff Farrell"
-date: "October 1, 2018"
+date: "October 1, 2018, updated March 19, 2019"
 linestretch: 0.5
 output:
  pdf_document:
@@ -28,12 +28,6 @@ main.path <- "~/Dropbox/HydraURDSubmission/"
 
 # Build output directory
 dir.create(paste0(main.path, "URD/Ectoderm/"), recursive=T)
-```
-
-```{r next-version, include=F}
-# Load functions that will be in URD 1.1 release
-source("~/URD/URD/ForFuture/NMFDoublets.R")
-source("~/URD/URD/ForFuture/geneLowess.R")
 ```
 
 # Load Data
@@ -91,14 +85,14 @@ plotDimHighlight(hydra.ec, "knn.outliers", "TRUE", highlight.color = "blue", plo
 Many cells in the data represent biological doublets, since cells of the ectodermal lineage readily engulf other cells once dissociated. In order to remove these cells, we used a non-negative matrix factorization (NMF) decomposition of the full data set, and identified those modules that are not primarily expressed in the ectoderm. Any cells in the 'ectoderm' lineage that had significant expression of modules primarily associated with other cell types were removed.
 
 ```{r nmf-outliers}
-# Modules from NMF calculated on entire data that are representative of non-endodermal cells.
+# Modules from NMF calculated on entire data that are representative of non-ectodermal cells.
 nmf.full.nonecto <- c("wt2", "wt4", "wt7", "wt8", "wt9", "wt12", "wt13", "wt15", "wt16", "wt20", "wt22", "wt23", "wt25", "wt28", "wt30", "wt31", "wt32", "wt34", "wt37", "wt38", "wt39", "wt41", "wt43", "wt45", "wt46", "wt47", "wt48", "wt52", "wt53", "wt54", "wt55", "wt57", "wt59", "wt61", "wt64", "wt65", "wt66", "wt69", "wt70", "wt71", "wt72", "wt73", "wt74", "wt75", "wt76", "wt79", "wt81", "wt82", "wt83", "wt84", "wt85", "wt89", "wt92", "wt94", "wt95")
 
-# Identify the cells in the full-data object that are in the endoderm object
+# Identify the cells in the full-data object that are in the ectoderm object
 hydra.full <- groupFromCells(hydra.full, "ectoderm", colnames(hydra.ec@logupx.data))
 plotDim(hydra.full, "ectoderm", plot.title = "Cells in the Ectoderm subset")
 
-# Which cells express NMF modules that are not associated with the endoderm?
+# Which cells express NMF modules that are not associated with the ectoderm?
 # Here, expression is defined cells that express one or more modules at a level > 0.125 (scaled from 0-1)
 cells.full.nmfnonecto <- names(which(Matrix::rowSums(hydra.full@nmf.c1[,nmf.full.nonecto] > 0.125) > 0))
 hydra.full <- groupFromCells(hydra.full, "nonecto", cells.full.nmfnonecto)
@@ -339,12 +333,12 @@ gridExtra::grid.arrange(grobs=list(
 
 # Finding spatially varying genes
 
-Since in this trajectory, "pseudotime" is really a proxy for spatial location (foot to head), we can find the spatially varying genes by finding those that vary in pseudotime. We group cells 5 at a time and calculate a spline curve that fits the mean expression (vs. pseudotime) of each group of 5 cells. We then consider those genes spatially varying that are: (1) expressed (present in at least 1% of cells, mean expression > 0.5 in at least one group of 5 cells, spline curve > 0.5 at some point), (2) vary significantly (their spline curve varies at least 33%), (3) are well fit (noise is usually poorly fit, here we threshold on the sum of squared residuals).
+Since in this trajectory, "pseudotime" is really a proxy for spatial location (foot to head), we can find the spatially varying genes by finding those that vary in pseudotime. We group cells 5 at a time and calculate a spline curve that fits the mean expression (vs. pseudotime) of each group of 5 cells. We then consider those genes spatially varying that are: (1) are well fit by our spline curve (noisy expression can look spatial, but is poorly fit), (2) vary significantly (their spline curve varies at least 33%-50%, depending on how well fit they are, and their log2 expression changes at least 0.75 across the trajectory), (3) are better fit by their spline curve than a flat line with slope 0.
 
 ## Calculate spline curves
 
 ```{r splines}
-# Consider all genes expressed in 1% of endodermal cells
+# Consider all genes expressed in 1% of ectodermal cells
 frac.exp <- Matrix::rowSums(hydra.ec.tree@logupx.data > 0) / ncol(hydra.ec.tree@logupx.data)
 ecto.genes <- names(frac.exp)[which(frac.exp > 0.01)]
 
@@ -379,23 +373,15 @@ names(splines) <- c("Basal Disc", "Body Column", "Tentacle", "Hypostome")
 Since there is such a dramatic transcriptional change between the basal disc and the body column, going to calculate a separate spline curve for the basal disc; also calculate two spline curves for body column to tentacle and body column to hypostome.
 
 ```{r calc-spatial}
-# Which genes have a spline curve that crosses 0.5?
-basal.disc.max.mean.spline <- apply(splines$`Basal Disc`$mean.smooth, 1, max)
-body.max.mean.spline <- apply(splines$`Body Column`$mean.smooth, 1, max)
-tentacle.max.mean.spline <- apply(splines$Tentacle$mean.smooth, 1, max)
-hypo.max.mean.spline <- apply(splines$Hypostome$mean.smooth, 1, max)
-tentacle.genes.wellexpressed <- names(which(tentacle.max.mean.spline > 0.5 | basal.disc.max.mean.spline > 0.5 | body.max.mean.spline > 0.5))
-hypo.genes.wellexpressed <- names(which(hypo.max.mean.spline > 0.5 | basal.disc.max.mean.spline > 0.5 | body.max.mean.spline > 0.5))
-
-# Combine into heatmaps of basal-body-tentacle and basal-body-hypostome
+# Combine into basal-body-tentacle and basal-body-hypostome trajectories for finding spatial genes
 tentacle.spline <- combineSmoothFit(splines, fits.use=c("Basal Disc", "Body Column", "Tentacle"))
 hypo.spline <- combineSmoothFit(splines, fits.use=c("Basal Disc", "Body Column", "Hypostome"))
 
-# Which genes change in their scaled log2 mean expression value by at least 33%?
-tentacle.change.scale <- apply(tentacle.spline$scaled.smooth, 1, function(x) diff(range(x)))
-hypo.change.scale <- apply(hypo.spline$scaled.smooth, 1, function(x) diff(range(x)))
-tentacle.genes.scale <- names(which(tentacle.change.scale >= 0.33))
-hypo.genes.scale <- names(which(hypo.change.scale >= 0.33))
+# Which genes change in their actual mean expression value by at least 0.75?
+tentacle.change.real <- apply(tentacle.spline$mean.smooth, 1, function(x) diff(range(x)))
+hypo.change.real <- apply(hypo.spline$mean.smooth, 1, function(x) diff(range(x)))
+tentacle.genes.mean <- names(which(tentacle.change.real >= 0.75))
+hypo.genes.mean <- names(which(hypo.change.real >= 0.75))
 
 # Which genes are well fit by the spline curves? (Noise is usually poorly fit by a curve)
 tentacle.spline.fit <- apply(tentacle.spline$scaled.smooth - tentacle.spline$scaled.expression.red, 1, function(i) sum(i^2))
@@ -404,10 +390,34 @@ tentacle.spline.fit.norm <- tentacle.spline.fit / ncol(tentacle.spline$scaled.ex
 hypo.spline.fit.norm <- hypo.spline.fit / ncol(hypo.spline$scaled.expression.red)
 tentacle.wellfit <- names(which(tentacle.spline.fit.norm <= 0.02))
 hypo.wellfit <- names(which(hypo.spline.fit.norm <= 0.02))
+
+# Which genes change in their scaled log2 mean expression value sufficiently?
+# At least 33%, and requiring more change (up to 50%) as the data is less well fit
+# by its spline curve.
+tentacle.change.scale <- apply(tentacle.spline$scaled.smooth, 1, function(x) diff(range(x)))
+hypo.change.scale <- apply(hypo.spline$scaled.smooth, 1, function(x) diff(range(x)))
+tentacle.genes.scale <- names(which(tentacle.change.scale >= tentacle.spline.fit.norm * .15/0.02 + 0.33))
+hypo.genes.scale <- names(which(hypo.change.scale >= hypo.spline.fit.norm * .15/0.02 + 0.33))
+
+# Ensure that genes are fit by the spline curve significantly better than a flat line of slope 0.
+# (Weighted by distance to next point in pseudotime to compensate for point density)
+tent.w <- ncol(tentacle.spline$scaled.smooth) - 1
+tent.weight <- diff(as.numeric(colnames(tentacle.spline$scaled.smooth))) * 1000
+tent.spline.fit.weighted <- apply(tentacle.spline$scaled.smooth[,1:tent.w] - tentacle.spline$scaled.expression.red[,1:tent.w], 1, function(i) sum(tent.weight * i^2))
+tent.flat.fit.weighted <- apply(tentacle.spline$scaled.expression.red[,1:tent.w], 1, function(x) sum(tent.weight * (x - mean(x))^2))
+tent.spline.fit.ratio <- log2(tent.flat.fit.weighted / tent.spline.fit.weighted)
+tent.spline.fit.betterthanflat <- names(which(tent.spline.fit.ratio > 0.25))
+
+hypo.w <- ncol(hypo.spline$scaled.smooth) - 1
+hypo.weight <- diff(as.numeric(colnames(hypo.spline$scaled.smooth))) * 1000
+hypo.spline.fit.weighted <- apply(hypo.spline$scaled.smooth[,1:hypo.w] - hypo.spline$scaled.expression.red[,1:hypo.w], 1, function(i) sum(hypo.weight * i^2))
+hypo.flat.fit.weighted <- apply(hypo.spline$scaled.expression.red[,1:hypo.w], 1, function(x) sum(hypo.weight * (x - mean(x))^2))
+hypo.spline.fit.ratio <- log2(hypo.flat.fit.weighted / hypo.spline.fit.weighted)
+hypo.spline.fit.betterthanflat <- names(which(hypo.spline.fit.ratio > 0.25))
   
 # Take the intersection of those genes and use them in the heatmap & analysis
-tentacle.genes <- intersect(intersect(tentacle.genes.scale, tentacle.wellfit), tentacle.genes.wellexpressed)
-hypo.genes <- intersect(intersect(hypo.genes.scale, hypo.wellfit), hypo.genes.wellexpressed)
+tentacle.genes <- intersect(intersect(intersect(tentacle.genes.scale, tentacle.genes.mean), tentacle.wellfit), tent.spline.fit.betterthanflat)
+hypo.genes <- intersect(intersect(intersect(hypo.genes.scale, hypo.genes.mean), hypo.wellfit), hypo.spline.fit.betterthanflat)  
 ```
 
 ## Spline plots
@@ -422,69 +432,175 @@ plotSmoothFitMultiCascade(splines, genes=ecto.plot.genes, scaled=F, colors=c("Ba
 
 ## Heatmaps
 
+### Heatmap of all significantly spatially varying genes
+
 Finally, we can make heatmaps of the expression of all of the genes that we found to vary spatially. These we save as PDF output because they do not perform well inside of R Markdown.
 
-```{r heatmap-tentacle}
-# Heatmap Basics
+```{r heatmap-overview}
+# Determine color scale for heatmap
 cols <- scales::gradient_n_pal(RColorBrewer::brewer.pal(9, "YlOrRd"))(seq(0,1,length.out = 50))
 
-# Get the scaled data, z-score it, and set values <0 to 0, the hierarchical cluster.
-# This emphasizes clustering on regions of peak expression for a gene.
-se <- tentacle.spline$scaled.expression[tentacle.genes,]
-se.sd <- apply(se, 1, sd)
-se.mean <- apply(se, 1, mean)
-se.z <- sweep(sweep(se, 1, se.mean, "-"), 1, se.sd, "/")
-se.z[se.z < 0] <- 0
-h.sez <- as.dendrogram(hclust(dist(se.z)))
-
-# Find a 'peak pseudotime' for each gene by taking the weighted average of
-# each window's pseudotime, weighted by the expression z-score (>0) within it
-# Can use this to reorder the dendrogram to try to put it in pseudotime order.
-pt.wm <- apply(se.z, 1, function(w) {
-  weighted.mean(x=as.numeric(colnames(se.z)), w=w)
+# Reduce the data in the four splines, such that each block is minimum 0.01
+# pseudotime; in this case, each block will be >= 5 cells, >= pseudotime 0.01
+splines.reduced <- lapply(names(splines), function(n) {
+  s <- splines[[n]]
+  l <- tolower(substr(n, 1, 2))
+  colnames(s$mean.expression) <- paste0(l, as.character(round(as.numeric(colnames(s$mean.expression)), digits=2)))
+  s$mean.expression <- matrixReduce(s$mean.expression)
+  colnames(s$mean.smooth) <- paste0(l, as.character(round(as.numeric(colnames(s$mean.smooth)), digits=2)))
+  s$mean.smooth <- matrixReduce(s$mean.smooth)
+  return(s)
 })
 
+# Combine the four splines into a single table & rescale maximum across all regions
+me <- do.call("cbind", lapply(splines.reduced, function(s) s$mean.expression))
+ms <- do.call("cbind", lapply(splines.reduced, function(s) s$mean.smooth))
+se <- sweep(me, 1, apply(me, 1, min), "-")
+se <- sweep(se, 1, apply(se, 1, max), "/")
+ss <- sweep(ms, 1, apply(ms, 1, min), "-")
+ss <- sweep(ss, 1, apply(ss, 1, max), "/")
+
+# Get all hypo & tentacle genes
+ecto.genes.plot <- unique(c(tentacle.genes, hypo.genes))
+
+# Hierarchical cluster based on smoothed expression
+h.ss <- hclust(dist(as.matrix(ss[ecto.genes.plot,])), method = "ward.D2")
+h.ss.d <- as.dendrogram(h.ss)
+k=27 # Cluster number chosen by eye.
+h.ss.clust <- cutree(h.ss, k=k)
+
+# Get cluster order as it will be in the heatmap
+clust.order <- unique(h.ss.clust[h.ss$order])
+h.ss.clust.ord <- plyr::mapvalues(from=clust.order, to=1:k, x = h.ss.clust)
+
+# Generate cluster color vector
+cluster.h <- seq(0,1,length.out=k+1)
+cluster.s <- rep(c(1, 0.75), length=k)
+cluster.v <- rep(c(1, 0.75), length=k)
+cluster.colors <- hsv(h=cluster.h[1:k], s=cluster.s, v=cluster.v)
+h.ss.clust.col <- plyr::mapvalues(from=as.character(1:k), to=cluster.colors, x=h.ss.clust.ord)
+
 # Generate the actual heatmap and save as a PDF.
-font.size <- 0.16
-pdf(paste0(main.path, "URD/Ectoderm/Ectoderm-Varying-Tentacle.pdf"), width=17, height=22)
-gplots::heatmap.2(as.matrix(se), Rowv=reorder(h.sez, max(pt.wm)-pt.wm, agglo.FUN=median), Colv=F, dendrogram="none", col=cols, trace="none", density.info="none", key=F, cexCol=0.8, cexRow=font.size, margins = c(5,8), lwid=c(0.3,4), lhei=c(0.4, 4), labCol=NA)
-title("Ectoderm: Foot to Tentacle", line=-1, adj=0.48, cex.main=4)
+pdf(paste0(main.path, "URD/Ectoderm/Ectoderm-Varying.pdf"), width=17, height=22)
+# Plot the heatmap
+gplots::heatmap.2(as.matrix(ss[ecto.genes.plot[h.ss$order],]), Rowv=F, RowSideColors=h.ss.clust.col[h.ss$order], Colv=F, dendrogram="none", col=cols, trace="none", density.info="none", key=F, cexCol=0.8, cexRow=0.08, margins = c(12,8), lwid=c(0.3,4), lhei=c(0.3, 4), labCol=NA, colsep=c(16, 40, 65), sepwidth=c(1,1))
+# Put a title on it
+title("Ectoderm Spatial Expression", line=-1, adj=0.48, cex.main=4)
+# Add tissue labels to bottom
+title("Basal Disc", line=-100.5, adj=0.12, cex.main=2)
+title("Body Column", line=-100.5, adj=0.41, cex.main=2)
+title("Tentacle", line=-100.5, adj=0.76, cex.main=2)
+title("Hypo", line=-100.5, adj=0.955, cex.main=2)
 dev.off()
 ```
 
-```{r}
-# Heatmap Basics
-cols <- scales::gradient_n_pal(RColorBrewer::brewer.pal(9, "YlOrRd"))(seq(0,1,length.out = 50))
+### Heatmap cluster expression profiles
 
-# Get the scaled data, z-score it, and set values <0 to 0, the hierarchical cluster.
-# This emphasizes clustering on regions of peak expression for a gene.
-se <- hypo.spline$scaled.expression[hypo.genes,]
-se.sd <- apply(se, 1, sd)
-se.mean <- apply(se, 1, mean)
-se.z <- sweep(sweep(se, 1, se.mean, "-"), 1, se.sd, "/")
-se.z[se.z < 0] <- 0
-h.sez <- as.dendrogram(hclust(dist(se.z)))
+We clustered the expression of these spatially varying genes in order to describe the overall common spatial expression patterns.
 
-# Find a 'peak pseudotime' for each gene by taking the weighted average of
-# each window's pseudotime, weighted by the expression z-score (>0) within it
-# Can use this to reorder the dendrogram to try to put it in pseudotime order.
-pt.wm <- apply(se.z, 1, function(w) {
-  weighted.mean(x=as.numeric(colnames(se.z)), w=w)
+```{r heatmap-cluster-profiles}
+# Make a spline object that aggregates the expression of genes from each cluster as their mean
+
+# Make fake spline object by running aggregate on all its slots
+splines.clusters <- lapply(splines, function(s) {
+  so <- s
+  # Aggregate by mean across clusters
+  so$scaled.expression <- stats::aggregate(s$scaled.expression[ecto.genes.plot,], by=list(h.ss.clust.ord[ecto.genes.plot]), FUN=mean)
+  # Rename rows to add a leading 0 to 1-9 so ggplot2 will sort correctly
+  rownames(so$scaled.expression) <- sprintf("%02d",as.numeric(rownames(so$scaled.expression)))
+  so$mean.expression <- stats::aggregate(s$mean.expression[ecto.genes.plot,], by=list(h.ss.clust.ord[ecto.genes.plot]), FUN=mean)
+  rownames(so$mean.expression) <- sprintf("%02d",as.numeric(rownames(so$mean.expression)))
+  so$scaled.smooth <- stats::aggregate(s$scaled.smooth[ecto.genes.plot,], by=list(h.ss.clust.ord[ecto.genes.plot]), FUN=mean)
+  rownames(so$scaled.smooth) <- sprintf("%02d",as.numeric(rownames(so$scaled.smooth)))
+  so$mean.smooth <- stats::aggregate(s$mean.smooth[ecto.genes.plot,], by=list(h.ss.clust.ord[ecto.genes.plot]), FUN=mean)
+  rownames(so$mean.smooth) <- sprintf("%02d",as.numeric(rownames(so$mean.smooth)))
+  so$mean.expression.red <- stats::aggregate(s$mean.expression.red[ecto.genes.plot,], by=list(h.ss.clust.ord[ecto.genes.plot]), FUN=mean)
+  rownames(so$mean.expression.red) <- sprintf("%02d",as.numeric(rownames(so$mean.expression.red)))
+  so$scaled.expression.red <- stats::aggregate(s$scaled.expression.red[ecto.genes.plot,], by=list(h.ss.clust.ord[ecto.genes.plot]), FUN=mean)
+  rownames(so$scaled.expression.red) <- sprintf("%02d",as.numeric(rownames(so$scaled.expression.red)))
+  return(so)
 })
 
-# Generate the actual heatmap and save as a PDF.
-font.size <- 0.25
-pdf(paste0(main.path, "URD/Ectoderm/Ectoderm-Varying-Hypostome.pdf"), width=17, height=22)
-gplots::heatmap.2(as.matrix(se), Rowv=reorder(h.sez, max(pt.wm)-pt.wm, agglo.FUN=median), Colv=F, dendrogram="none", col=cols, trace="none", density.info="none", key=F, cexCol=0.8, cexRow=font.size, margins = c(5,8), lwid=c(0.3,4), lhei=c(0.4, 4), labCol=NA)
-title("Ectoderm: Foot to Hypostome", line=-1, adj=0.48, cex.main=4)
+# Plot expression profiles of each cluster
+pdf(paste0(main.path, "URD/Ectoderm/Ectoderm-Cluster-Profiles.pdf"), width=8.5, height=11)
+plotSmoothFitMultiCascade(splines.clusters, sort(rownames(splines.clusters$`Basal Disc`$mean.expression)), scaled = T, plot.data=T, colors=c("Basal Disc"="#FF8C00", "Body Column"="#000000", "Tentacle"="#1E90FF", "Hypostome"="#32CD32"), ncol=4) + ggtitle("Ectoderm Spatial Cluster Expression Profiles")
+dev.off()
+
+```
+
+### "Zoom-in" heatmaps
+
+We also present a zoom-in of the spatial expression heatmaps for readability.
+
+```{r heatmap-clusters}
+## Make booklet of heatmaps for each cluster
+
+# Choose clusters for each page
+cluster.ends <- c(5, 10, 14, 19, 27)
+cluster.starts <- c(1, head(cluster.ends, -1) + 1)
+
+pdf(paste0(main.path, "URD/Ectoderm/Ectoderm-Cluster-Heatmaps.pdf"), width=17, height=22)
+for (c in 1:length(cluster.ends)) {
+  # Which clusters to put in this heatmap
+  c.use <- cluster.starts[c]:cluster.ends[c]
+  # Determine which rows to plot
+  rp <- h.ss$order[which(h.ss.clust.ord[h.ss$order] %in% c.use)]
+  # Make the heatmap
+  gplots::heatmap.2(as.matrix(ss[ecto.genes.plot[rp],]), Rowv=F, RowSideColors=h.ss.clust.col[rp], Colv=F, dendrogram="none", col=cols, trace="none", density.info="none", key=F, cexCol=0.8, cexRow=0.9, margins = c(12,15), lwid=c(0.3,4), lhei=c(0.3, 4), labCol=NA, colsep=c(16, 40, 65), sepwidth=c(1,1))
+  # Add title
+  title(paste0("Ectoderm Spatial: Clusters ", cluster.starts[c], " to ", cluster.ends[c]), line=-1, adj=0.48, cex.main=4)
+  # Add tissue labels to bottom
+  title("Basal Disc", line=-100.5, adj=0.115, cex.main=2)
+  title("Body Column", line=-100.5, adj=0.38, cex.main=2)
+  title("Tentacle", line=-100.5, adj=0.71, cex.main=2)
+  title("Hypo", line=-100.5, adj=0.89, cex.main=2)
+}
+dev.off()
+```
+
+### Transcription factor heatmaps
+ 
+And, finally, we isolated the transcription factors that vary spatially in the tissue, as potential candidates for important regulators of the differentiation of particular tissues.
+
+```{r heatmap-tfs}
+# Load list of Hydra TFs
+tfs <- read.table(paste0(main.path, "objects/aepLRv2_TFs.txt"), header=T, stringsAsFactors = F)
+tf.genes <- tfs$ID
+
+# Get ectoderm varying genes that are also TFs
+ecto.spatial.tfs <- intersect(tf.genes, ecto.genes.plot)
+
+# Figure out how they should be ordered on the plot
+ecto.spatial.tf.order <- t(apply(ss[ecto.spatial.tfs,] > 0.75, 1, function(x) {
+  y <- which(x)
+  return(c(min(y), max(y)))
+}))
+ecto.spatial.tfs.ordered <- ecto.spatial.tfs[order(ecto.spatial.tf.order[,1], ecto.spatial.tf.order[,2], decreasing=c(F, F), method="radix")]
+
+# Make a heatmap of just the TFs
+pdf(paste0(main.path, "URD/Ectoderm/Ectoderm-SpatialTFs.pdf"), width=8.5, height=3.48)
+gplots::heatmap.2(as.matrix(ss[ecto.spatial.tfs.ordered,]),Rowv=F, Colv=F, dendrogram="none", col=cols, trace="none", density.info="none", key=F, cexCol=0.8, cexRow=1, margins = c(2.5,13), lwid=c(0.3,4), lhei=c(0.8,4), labCol=NA, colsep=c(16, 40, 65), sepwidth=c(1,1))
+title("Ectoderm Spatial TFs", line=2, adj=0.5, cex.main=1.5)
+title("Basal Disc", line=-12.25, adj=0.01, cex.main=0.8)
+title("Body Column", line=-12.25, adj=0.255, cex.main=0.8)
+title("Tentacle", line=-12.25, adj=0.57, cex.main=0.8)
+title("Hypo", line=-12.25, adj=0.745, cex.main=0.8)
 dev.off()
 ```
 
 # Save results
 
 ```{r save-results}
-write(tentacle.genes, file=paste0(main.path, "URD/Ectoderm/Genes-Ectoderm-Varying-Tentacle.txt"))
-write(hypo.genes, file=paste0(main.path, "URD/Ectoderm/Genes-Ectoderm-Varying-Hypostome.txt"))
+# Make data frame of genes and their cluster identities
+write.table(
+  data.frame(
+    gene=ecto.genes.plot[h.ss$order],
+    cluster=h.ss.clust.ord[h.ss$order]
+  ),
+  quote=F, row.names=F, sep="\t",
+  file=paste0(main.path, "URD/Ectoderm/Genes-Ectoderm-Varying.txt")
+)
+# Save objects
 saveRDS(splines, file=paste0(main.path, "URD/Ectoderm/Splines-Ectoderm.rds"))
 saveRDS(hydra.ec.tree, file=paste0(main.path, "URD/Ectoderm/Hydra_URD_Ectoderm.rds"))
 ```

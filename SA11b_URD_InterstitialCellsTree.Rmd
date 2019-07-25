@@ -28,12 +28,6 @@ main.path <- "~/Dropbox/HydraURDSubmission/"
 dir.create(paste0(main.path, "URD/IC/"), recursive=T)
 ```
 
-```{r next-version, include=F}
-# Load functions that will be in URD 1.1 release
-source("~/URD/URD/ForFuture/NMFDoublets.R")
-source("~/URD/URD/ForFuture/geneLowess.R")
-```
-
 # Load subsetted URD data for this lineage
 
 ```{r load-data}
@@ -153,23 +147,24 @@ URD requires that the user define the starting points (the root) and the termina
 
 ## Root
 
-While the molecular details of the interstital stem cells were previously unknown, we hypothesized that they have low HvSoxC (Swiss-Prot SOX4, t15393) and high FOXL1. This was based on the observation that HvSoxC might be a general differentiation marker, since it turns on in cells in the process of nematocyte, neuron, and gland, so those cells that do not express it are the likely stem cells. Thus, the root was chosen as several clusters of cells that were predominantly HvSoxC- FOXL1+.
+While the molecular details of the interstital stem cells were previously unknown, we hypothesized that they have low HvSoxC (Swiss-Prot SOX4, t15393). This was based on the observation that HvSoxC might be a general differentiation marker, since it turns on in cells in the process of nematocyte, neuron, and gland, so those cells that do not express it are the likely stem cells. Thus, the root was chosen as several clusters of cells that were predominantly HvSoxC-. Furthermore, these cells were also low in expression of NMF expression modules that turned on early during the process of nematogenesis (ic7, blue), neurogenesis (ic49, green), and gland differentiation (ic55, red).
 
-```{r, fig.width=4, fig.height=4}
-# Plot interstitial stem cell genes
-plotDim(hydra.ic, "t15393aep|SOX4_MOUSE")
-plotDim(hydra.ic, "t12642aep|FOXL1_MOUSE")
-plotDimDual(hydra.ic, "t15393aep|SOX4_MOUSE", "t12642aep|FOXL1_MOUSE")
+```{r, fig.width=8, fig.height=7}
+# Plot markers whose absence reveals interstitial stem cells
+p1 <- plotDim(hydra.ic, "t15393aep|SOX4_MOUSE")
+p2 <- plotDimDiscretized(hydra.ic, labels=c("ic7", "ic49", "ic55"), label.min = rep(0.2,3), label.max=rep(1,3), plot.title = "Early differentiation NMF modules")
 
 # Plot the clustering
-plotDim(hydra.ic, "Infomap-40", label.clusters=T, legend=F)
+p3 <- plotDim(hydra.ic, "Infomap-40", label.clusters=T, legend=F)
 
 # Define root cells
 root.cells <- cellsInCluster(hydra.ic, "Infomap-40", c("1", "2", "3"))
 hydra.ic <- groupFromCells(hydra.ic, "root", root.cells)
 
 # Plot the root cells
-plotDim(hydra.ic, "root", plot.title="Root cells")
+p4 <- plotDim(hydra.ic, "root", plot.title="Root cells")
+
+gridExtra::grid.arrange(grobs=list(p1, p2, p3, p4), ncol=2)
 ```
 
 ## Tips
@@ -374,8 +369,8 @@ hydra.ic.tree <- buildTree(hydra.ic.tree, pseudotime="pseudotime", divergence.me
 
 hydra.ic.tree <- nameSegments(object = hydra.ic.tree,
    segments=c("1", "2", "6", "3", "9", "14", "13", "12", "10", "24", "20", "21", "17", "16", "22", "18", "19", "23"),
-   segment.names=c("zmg 2", "zmg 1", "gmgc hyp", "smgc 1", "smgc 2", "nematobl 6", "nematobl 7", "nematobl 8", "nematobl 5", "neuron 7", "neuron 4", "neuron 5", "neuron 1", "neuron 9", "neuron 8", "neuron 2", "neuron 3", "neuron 6"),
-   short.names=c("ZymLower", "ZymUpper", "GranularUpper", "SpumLower", "SpumUpper",  "NEM_6", "NEM_7", "NEM_8", "NEM_5", "NC_7", "NC_4", "NC_5", "NC_1", "NC_9", "NC_8", "NC_2", "NC_3", "NC_6")
+   segment.names=c("zmg 2", "zmg 1", "gmgc hyp", "smgc 1", "smgc 2", "nematobl 6", "nematobl 7", "nematobl 8", "nematobl 5", "neuron en3", "neuron en2", "neuron ec4", "neuron ec2", "neuron ec1A", "neuron ec1B", "neuron ec3", "neuron en1", "neuron ec5"),
+   short.names=c("zmg2", "zmg1", "gmgc_hyp", "smgc1", "smgc2", "nbl6", "nbl7", "nbl8", "nbl5", "n_en3", "n_en2", "n_ec4", "n_ec2", "n_ec1A", "n_ec1B", "n_ec3", "n_en1", "n_ec5")
 )
 ```
 
